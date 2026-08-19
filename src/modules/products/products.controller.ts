@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
+import { CreateProductVariantDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
@@ -21,6 +22,18 @@ export class ProductsController {
   @ApiOperation({ summary: 'Tạo sản phẩm & Biến thể cùng lúc (Chỉ ADMIN)' })
   create(@Body() createProductDto: CreateProductDto) {
     return this.productsService.create(createProductDto);
+  }
+
+  @Post(':id/variants')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Thêm một Biến thể (Variant) mới vào Sản phẩm đã có (Chỉ ADMIN)' })
+  addVariant(
+    @Param('id') productId: string,
+    @Body() createVariantDto: CreateProductVariantDto,
+  ) {
+    return this.productsService.addVariant(productId, createVariantDto);
   }
 
   @Get()

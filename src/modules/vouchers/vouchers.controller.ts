@@ -15,7 +15,7 @@ export class VouchersController {
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN) // Chỉ Admin mới được phát hành mã
+  @Roles(Role.ADMIN) 
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Tạo mã giảm giá mới (Chỉ ADMIN)' })
   create(@Body() createVoucherDto: CreateVoucherDto) {

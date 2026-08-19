@@ -17,9 +17,9 @@ export class InventoryController {
 
   @Post('warehouses')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.WAREHOUSE_MANAGER)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Tạo kho hàng mới (Chỉ ADMIN)' })
+  @ApiOperation({ summary: 'Tạo kho hàng mới (Chỉ WAREHOUSE_MANAGER)' })
   createWarehouse(@Body() createWarehouseDto: CreateWarehouseDto) {
     return this.inventoryService.createWarehouse(createWarehouseDto);
   }
@@ -32,15 +32,18 @@ export class InventoryController {
 
   @Post('stock-in')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.WAREHOUSE_MANAGER)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Nhập hàng vào kho (Chỉ ADMIN)' })
+  @ApiOperation({ summary: 'Nhập hàng vào kho (Chỉ WAREHOUSE_MANAGER)' })
   stockIn(@CurrentUser() user: any, @Body() stockInDto: StockInDto) {
     return this.inventoryService.stockIn(user.id, stockInDto);
   }
 
   @Get('inventory')
-  @ApiOperation({ summary: 'Xem danh sách hàng mỗi kho' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xem danh sách hàng mỗi kho(Chỉ WAREHOUSE_MANAGER)' })
   getInventories() {
     return this.inventoryService.getInventory();
   }

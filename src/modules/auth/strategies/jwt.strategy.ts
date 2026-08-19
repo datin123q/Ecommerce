@@ -14,7 +14,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   // Nếu token hợp lệ, hàm này sẽ chạy.
-  // Dữ liệu trả về ở đây sẽ được NestJS tự động nhét vào biến `req.user`
   async validate(payload: any) {
     return { id: payload.sub, email: payload.email, role: payload.role };
   }

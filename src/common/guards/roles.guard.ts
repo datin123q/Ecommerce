@@ -8,18 +8,18 @@ export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    // 1. Đọc cái "nhãn @Roles" xem API này yêu cầu chức vụ gì
+    // 1. Đọc nhãn @Roles
     const requiredRoles = this.reflector.getAllAndOverride<Role[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
     
-    // 2. Nếu API không dán nhãn (không giới hạn quyền), cho phép qua luôn
+    // 2. Nếu API không dán nhãn cho phép qua luôn
     if (!requiredRoles) {
       return true;
     }
     
-    // 3. Lấy thông tin user (được giải mã từ thẻ Token bởi JwtAuthGuard trước đó)
+    // 3. Lấy thông tin user 
     const request = context.switchToHttp().getRequest();
     const user = request.user;
     
@@ -33,6 +33,6 @@ export class RolesGuard implements CanActivate {
       throw new ForbiddenException('Bạn không có quyền thực hiện hành động này!');
     }
     
-    return true; // Cho phép đi tiếp vào Controller
+    return true; 
   }
 }
