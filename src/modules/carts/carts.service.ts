@@ -35,18 +35,21 @@ export class CartsService {
   async addToCart(userId: string, addToCartDto: AddToCartDto) {
     const { variantId, quantity } = addToCartDto;
 
-    // 1. Kiểm tra xem biến thể có tồn tại không
-    const variant = await this.prisma.productVariant.findUnique({ where: { id: variantId } });
+    const variant = await this.prisma.productVariant.findUnique({ where: { id: variantId }, include: {product:true} });
     if (!variant) throw new NotFoundException('Sản phẩm không tồn tại');
 
-    // 2. Đảm bảo user đã có giỏ hàng
     const cart = await this.getMyCart(userId);
 
-    // 3. Kiểm tra xem mặt hàng này đã có trong giỏ chưa
     const existingCartItem = await this.prisma.cartItem.findFirst({
       where: { cartId: cart.id, variantId },
     });
-
+    await this.prisma.notification.create({
+      data: {
+        userId: userId,
+        content: `Thêm ${variant.product.name} vào giỏ hàng X ${quantity}`,
+        isRead: false
+      }
+    })
     if (existingCartItem) {
       //  Cộng dồn số lượng
       return this.prisma.cartItem.update({
@@ -71,11 +74,17 @@ export class CartsService {
     const cart = await this.getMyCart(userId);
     
     const item = await this.prisma.cartItem.findFirst({
-      where: { id: cartItemId, cartId: cart.id },
+      where: { id: cartItemId, cartId: cart.id }, include: {variant:true}
     });
 
     if (!item) throw new NotFoundException('Không tìm thấy sản phẩm trong giỏ của bạn');
-
+    await this.prisma.notification.create({
+      data: {
+        userId: userId,
+        content: `Xóa ${item.variant.name} khỏi giỏ hàng`,
+        isRead: false
+      }
+    })
     return this.prisma.cartItem.delete({
       where: { id: cartItemId },
     });

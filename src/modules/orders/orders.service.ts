@@ -77,7 +77,7 @@ export class OrdersService {
       }
 
       let discount = voucher.value;
-      if (discount > totalAmount) discount = totalAmount; // Chống âm tiền
+      if (discount > totalAmount) discount = totalAmount; 
       totalAmount -= discount;
       
       appliedVoucherId = voucher.id;
@@ -144,6 +144,13 @@ export class OrdersService {
     setImmediate(async () => {
       try {
         this.logger.log(`[Job] Đang xử lý các tác vụ ngầm cho đơn hàng ${orderId}...`)
+        await this.prisma.notification.create({
+          data: {
+            userId: userId,
+            content: `Đơn hàng mã số ${orderId} đã được xác nhận`,
+            isRead: false
+          }
+        })
         this.logger.log(`[Job] Hoàn thành background jobs cho đơn ${orderId}.`);
       } catch (error: any) {
         this.logger.error(`[Job Error] Lỗi khi chạy background jobs: ${error.message}`);

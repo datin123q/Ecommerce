@@ -2,8 +2,10 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@n
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { CreateProductVariantDto } from './dto/create-product.dto';
+import { UpdateProductVariantDto } from './dto/update-productVariant.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -23,6 +25,19 @@ export class ProductsController {
   create(@Body() createProductDto: CreateProductDto) {
     return this.productsService.create(createProductDto);
   }
+
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cập nhật sản phẩm (Chỉ ADMIN)' })
+  updateProduct(
+      @Param('id') id: string, 
+      @Body() updateProductDto: UpdateProductDto,
+      @CurrentUser() user: any 
+    ) {
+      return this.productsService.updateProduct(id, updateProductDto, user.id);
+    }
 
   @Post(':id/variants')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -55,5 +70,24 @@ export class ProductsController {
   @ApiOperation({ summary: 'Xóa sản phẩm (Chỉ ADMIN)' })
   remove(@Param('id') id: string) {
     return this.productsService.remove(id);
+  }
+
+  @Patch('variants/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN, Role.WAREHOUSE_MANAGER) // Có thể cho phép cả quản lý kho vào sửa
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cập nhật biến thể sản phẩm (Size, Màu, Giá, Kho...)' })
+  updateVariant(
+    @Param('id') id: string,
+    @Body() updateProductVariantDto: UpdateProductVariantDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.productsService.updateVariant(id, updateProductVariantDto, user.id);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Lấy chi tiết một biến thể' })
+  findOneVariant(@Param('id') id: string) {
+    return this.productsService.findOneVariant(id);
   }
 }

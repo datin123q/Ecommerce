@@ -14,7 +14,8 @@ enum Role {
 
 enum OrderStatus {
   PENDING
-  SHIPPED
+  PAID
+  AWAITING_DELIVERY
   DELIVERED
   CANCELLED
 }
@@ -24,6 +25,22 @@ enum TransactionType {
   OUT
 }
 
+enum PaymentStatus{
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum PaymentMethod{
+  COD
+  VNPAY
+}
+
+enum AuditAction{
+  CREATE
+  DELETE
+  UPDATE
+}
 // ================= QUẢN LÝ NGƯỜI DÙNG =================
 
 model User {
@@ -56,9 +73,13 @@ model Notification {
 
 model AuditLog {
   id        String   @id @default(uuid())
-  action    String
+  action    AuditAction
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entity    String
+  entityId  String
+  oldValues  Json?
+  newValues  Json?
   createdAt DateTime @default(now())
 
   @@map("Audits_log")
@@ -176,7 +197,7 @@ model CartItem {
 
 model Order {
   id          String      @id @default(uuid())
-  status      OrderStatus @default(PENDING) // <-- TRẠNG THÁI ĐƠN HÀNG
+  status      OrderStatus @default(PENDING) 
   totalAmount Float
 
   userId String
@@ -206,8 +227,9 @@ model OrderItem {
 model Payment {
   id     String @id @default(uuid())
   amount Float
-  status String @default("PENDING") // SUCCESS, FAILED...
-
+  status PaymentStatus @default(PENDING) 
+  method PaymentMethod @default(COD)
+  transactionId String?
   orderId String @unique
   order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 

@@ -43,7 +43,7 @@ export class CategoriesService {
   }
 
   async update(id: string, updateCategoryDto: UpdateCategoryDto) {
-    await this.findOne(id); // Kiểm tra tồn tại trước khi sửa
+    await this.findOne(id); 
     return this.prisma.category.update({
       where: { id },
       data: updateCategoryDto,

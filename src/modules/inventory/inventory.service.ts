@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
+import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { StockInDto } from './dto/stock-in.dto';
 import { TransactionType } from '@prisma/client';
 
@@ -19,6 +20,23 @@ export class InventoryService {
 
   getInventory(){
     return this.prisma.inventory.findMany();
+  }
+
+  //sửa thông tin kho
+  async update(id: string, updateWarehouseDto: UpdateWarehouseDto) {
+    await this.findOne(id); 
+    return this.prisma.warehouse.update({
+      where: { id },
+      data: updateWarehouseDto,
+    });
+  }
+
+    async findOne(id: string) {
+    const warehouse = await this.prisma.warehouse.findUnique({
+      where: { id },
+    });
+    if (!warehouse) throw new NotFoundException('Không tìm thấy kho');
+    return warehouse;
   }
 
   // --- NGHIỆP VỤ NHẬP KHO (STOCK IN) ---

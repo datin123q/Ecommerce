@@ -9,6 +9,9 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { CartsModule } from './modules/carts/cart.module';
 import { VouchersModule } from './modules/vouchers/vouchers.module';
 import { OrdersModule } from './modules/orders/orders.module';
+import { PaymentsModule } from './modules/payments/payment.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 
 @Module({
   imports: [
@@ -23,7 +26,10 @@ import { OrdersModule } from './modules/orders/orders.module';
     InventoryModule,
     CartsModule,
     VouchersModule,
-    OrdersModule
+    OrdersModule,
+    PaymentsModule,
+    NotificationsModule,
+    AuditLogsModule
   ],
   controllers: [],
   providers: [],

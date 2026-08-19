@@ -2,11 +2,13 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { PrismaService } from '../../database/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { UpdateProductVariantDto } from './dto/update-productVariant.dto';
 import { CreateProductVariantDto } from './dto/create-product.dto';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly auditLogsService: AuditLogsService) {}
   //tạo products
   async create(createProductDto: CreateProductDto) {
     const { variants, ...productData } = createProductDto;
@@ -31,8 +33,32 @@ export class ProductsService {
       throw error;
     }
   }
+
+  async updateProduct(id: string, updateProductDto: UpdateProductDto, adminId: string) {
+
+    const oldProduct = await this.findOne(id); 
+
+    const newProduct = await this.prisma.product.update({
+      where: { id },
+      data: {
+        name: updateProductDto.name,
+        description: updateProductDto.description,
+      }
+    });
+
+    await this.auditLogsService.logAction(
+      adminId,
+      'UPDATE',
+      'Product',
+      id,
+      oldProduct,
+      newProduct
+    );
+
+    return newProduct;
+  }
+
   async addVariant(productId: string, variantData: CreateProductVariantDto) {
-    // 1. Kiểm tra xem sản phẩm gốc có tồn tại không
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
     });
@@ -57,6 +83,38 @@ export class ProductsService {
       throw error;
     }
   }
+async updateVariant(variantId: string, updateVariantDto: UpdateProductVariantDto, adminId: string) {
+    // 1. Kiểm tra xem biến thể có tồn tại không
+    const oldVariant = await this.prisma.productVariant.findUnique({ 
+      where: { id: variantId } 
+    });
+
+    if (!oldVariant) {
+      throw new NotFoundException(`Không tìm thấy biến thể với ID: ${variantId}`);
+    }
+
+    // 2. Cập nhật dữ liệu mới (Chỉ lấy sku, name, variant)
+    const newVariant = await this.prisma.productVariant.update({
+      where: { id: variantId },
+      data: {
+        sku: updateVariantDto.sku,
+        name: updateVariantDto.name,
+        variant: updateVariantDto.variant,
+      }
+    });
+
+    // 3. Ghi lại Audit Log
+    await this.auditLogsService.logAction(
+      adminId,
+      'UPDATE',
+      'ProductVariant', 
+      variantId,
+      oldVariant,
+      newVariant
+    );
+
+    return newVariant;
+  }
 
 
   findAll() {
@@ -74,9 +132,18 @@ export class ProductsService {
     return product;
   }
 
+  async findOneVariant(id: string) {
+    const variant = await this.prisma.productVariant.findUnique({
+      where: { id },
+      include: { product:true },
+    });
+    if (!variant) throw new NotFoundException('Không tìm thấy sản phẩm');
+    return variant;
+  }
+
 
   async remove(id: string) {
-    await this.findOne(id); // Kiểm tra xem có tồn tại không
+    await this.findOne(id); 
     return this.prisma.product.delete({
       where: { id },
     });

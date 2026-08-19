@@ -1,6 +1,7 @@
-import { Controller, Post, Body, UseGuards, Get } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Patch, Param } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
+import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { StockInDto } from './dto/stock-in.dto';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
@@ -17,7 +18,7 @@ export class InventoryController {
 
   @Post('warehouses')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.WAREHOUSE_MANAGER)
+  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Tạo kho hàng mới (Chỉ WAREHOUSE_MANAGER)' })
   createWarehouse(@Body() createWarehouseDto: CreateWarehouseDto) {
@@ -29,10 +30,17 @@ export class InventoryController {
   getWarehouses() {
     return this.inventoryService.getWarehouses();
   }
-
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cập nhật thông tin kho (Chỉ ADMIN)' })
+  update(@Param('id') id: string, @Body() updateWarehouseDto: UpdateWarehouseDto) {
+    return this.inventoryService.update(id, updateWarehouseDto);
+  }
   @Post('stock-in')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.WAREHOUSE_MANAGER)
+  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Nhập hàng vào kho (Chỉ WAREHOUSE_MANAGER)' })
   stockIn(@CurrentUser() user: any, @Body() stockInDto: StockInDto) {
@@ -41,9 +49,9 @@ export class InventoryController {
 
   @Get('inventory')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xem danh sách hàng mỗi kho(Chỉ WAREHOUSE_MANAGER)' })
+  @ApiOperation({ summary: 'Xem danh sách hàng mỗi kho(WAREHOUSE_MANAGER)' })
   getInventories() {
     return this.inventoryService.getInventory();
   }
