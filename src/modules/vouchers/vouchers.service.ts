@@ -1,21 +1,32 @@
 import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateVoucherDto } from './dto/create-voucher.dto';
+import { UpdateVoucherDto } from './dto/update-voucher.dto';
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 
 @Injectable()
 export class VouchersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly auditLogsService: AuditLogsService) {}
 
   //  Tạo mã giảm giá
-  async create(createVoucherDto: CreateVoucherDto) {
+  async create(createVoucherDto: CreateVoucherDto, adminId: string) {
     const existing = await this.prisma.voucher.findUnique({
       where: { code: createVoucherDto.code },
     });
     if (existing) throw new ConflictException('Mã voucher này đã tồn tại!');
 
-    return this.prisma.voucher.create({
+    const newVoucher = await this.prisma.voucher.create({
       data: createVoucherDto, 
     });
+    await this.auditLogsService.logAction(
+      adminId,
+      'CREATE',
+      'Voucher',
+      newVoucher.id,
+      null,        
+      newVoucher,   
+    );
+    return newVoucher;
   }
 
   //  Xem tất cả mã
@@ -42,5 +53,65 @@ export class VouchersService {
       code: voucher.code,
       discountAmount,
     };
+  }
+  async updateVoucher(voucherId: string, updateVoucherDto: UpdateVoucherDto, adminId: string) {
+    // 1. Kiểm tra xem biến thể có tồn tại không
+    const oldVoucher = await this.prisma.voucher.findUnique({ 
+      where: { id: voucherId } 
+    });
+
+    if (!oldVoucher) {
+      throw new NotFoundException(`Không tìm thấy voucher với id ${voucherId}`);
+    }
+
+    // 2. Cập nhật dữ liệu mới 
+    const newVoucher = await this.prisma.voucher.update({
+      where: { id: voucherId },
+      data: {
+        limit: updateVoucherDto.limit,
+        value: updateVoucherDto.value 
+      }
+    });
+
+    // 3. Ghi lại Audit Log
+    await this.auditLogsService.logAction(
+      adminId,
+      'UPDATE',
+      'Voucher', 
+      voucherId,
+      oldVoucher,
+      newVoucher
+    );
+
+    return newVoucher;
+  }
+  async remove(voucherId: string, adminId:string) {
+    const oldVoucher = await this.prisma.voucher.findUnique({ 
+      where: { id: voucherId } 
+    });
+
+    if (!oldVoucher) {
+      throw new NotFoundException(`Không tìm thấy voucher với id ${voucherId}`);
+    }
+
+    // 2. Cập nhật dữ liệu mới 
+    const newVoucher = await this.prisma.voucher.update({
+      where: { id: voucherId },
+      data: {
+        limit: 0,
+        count: 0 
+      }
+    });
+
+    // 3. Ghi lại Audit Log
+    await this.auditLogsService.logAction(
+      adminId,
+      'UPDATE',
+      'Voucher', 
+      voucherId,
+      oldVoucher,
+      newVoucher
+    );
+    return newVoucher;
   }
 }

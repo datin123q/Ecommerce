@@ -10,11 +10,11 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service';
 export class ProductsService {
   constructor(private readonly prisma: PrismaService, private readonly auditLogsService: AuditLogsService) {}
   //tạo products
-  async create(createProductDto: CreateProductDto) {
+  async create(createProductDto: CreateProductDto, adminId: string) {
     const { variants, ...productData } = createProductDto;
 
     try {
-      return await this.prisma.product.create({
+      const newProduct = await this.prisma.product.create({
         data: {
           ...productData,
           variants: {
@@ -26,6 +26,15 @@ export class ProductsService {
           variants: true, 
         },
       });
+      await this.auditLogsService.logAction(
+        adminId,
+        'CREATE',
+        'Product',
+        newProduct.id,
+        null,        
+        newProduct   
+      );
+      return newProduct;
     } catch (error) {
       if (error.code === 'P2002') {
         throw new ConflictException('Mã SKU của biến thể đã tồn tại, vui lòng kiểm tra lại!');
@@ -58,7 +67,7 @@ export class ProductsService {
     return newProduct;
   }
 
-  async addVariant(productId: string, variantData: CreateProductVariantDto) {
+  async addVariant(productId: string, variantData: CreateProductVariantDto, adminId: string) {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
     });
@@ -68,7 +77,7 @@ export class ProductsService {
     }
 
     try {
-      return await this.prisma.productVariant.create({
+      const newVariant = await this.prisma.productVariant.create({
         data: {
           sku: variantData.sku,
           name: variantData.name,
@@ -76,6 +85,15 @@ export class ProductsService {
           productId: productId, 
         },
       });
+      await this.auditLogsService.logAction(
+        adminId,
+        'CREATE',
+        'Product',
+        newVariant.id,
+        null,        
+        newVariant   
+      );
+      return newVariant;
     } catch (error: any) {
       if (error.code === 'P2002') {
         throw new ConflictException('Mã SKU của biến thể này đã tồn tại!');
@@ -83,7 +101,8 @@ export class ProductsService {
       throw error;
     }
   }
-async updateVariant(variantId: string, updateVariantDto: UpdateProductVariantDto, adminId: string) {
+
+  async updateVariant(variantId: string, updateVariantDto: UpdateProductVariantDto, adminId: string) {
     // 1. Kiểm tra xem biến thể có tồn tại không
     const oldVariant = await this.prisma.productVariant.findUnique({ 
       where: { id: variantId } 
@@ -142,10 +161,33 @@ async updateVariant(variantId: string, updateVariantDto: UpdateProductVariantDto
   }
 
 
-  async remove(id: string) {
-    await this.findOne(id); 
+  async remove(id: string, adminId: string) {
+    const oldProduct = await this.findOne(id); 
+    await this.auditLogsService.logAction(
+      adminId,
+      'DELETE',
+      'Product',
+      id,
+      oldProduct,        
+      null,   
+    );
     return this.prisma.product.delete({
       where: { id },
     });
+  }
+
+  async removeVariant(id: string, adminId: string) {
+    const oldVariant = await this.findOneVariant(id);
+    await this.auditLogsService.logAction(
+      adminId,
+      'DELETE',
+      'Product',
+      id,
+      oldVariant,        
+      null,   
+    );
+    return this.prisma.productVariant.delete({
+      where: {id},
+    })
   }
 }

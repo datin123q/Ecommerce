@@ -42,7 +42,6 @@ export class CreateProductDto {
   @IsNotEmpty()
   categoryId: string;
 
-  // Khai báo mảng biến thể đi kèm
   @ApiProperty({ type: [CreateProductVariantDto], description: 'Danh sách các biến thể của sản phẩm' })
   @IsArray()
   @ValidateNested({ each: true })

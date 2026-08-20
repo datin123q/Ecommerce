@@ -9,7 +9,7 @@
 CREATE TYPE "PaymentStatus" AS ENUM ('PENDING', 'SUCCESS', 'FAILED');
 
 -- CreateEnum
-CREATE TYPE "PaymentMethod" AS ENUM ('COD', 'VNPAY');
+CREATE TYPE "PaymentMethod" AS ENUM ('COD', 'STRIPE');
 
 -- AlterEnum
 BEGIN;

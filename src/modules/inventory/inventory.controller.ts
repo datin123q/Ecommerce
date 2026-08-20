@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Get, Patch, Param } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Patch, Param ,Delete} from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
@@ -21,22 +21,34 @@ export class InventoryController {
   @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Tạo kho hàng mới (Chỉ WAREHOUSE_MANAGER)' })
-  createWarehouse(@Body() createWarehouseDto: CreateWarehouseDto) {
-    return this.inventoryService.createWarehouse(createWarehouseDto);
+  createWarehouse(@Body() createWarehouseDto: CreateWarehouseDto, @CurrentUser() user: any) {
+    return this.inventoryService.createWarehouse(createWarehouseDto, user.id);
   }
 
   @Get('warehouses')
-  @ApiOperation({ summary: 'Xem danh sách kho hàng' })
+  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
+  @ApiOperation({ summary: 'Xem danh sách kho hàng  (Chỉ WAREHOUSE_MANAGER)' })
   getWarehouses() {
     return this.inventoryService.getWarehouses();
   }
+
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Cập nhật thông tin kho (Chỉ ADMIN)' })
-  update(@Param('id') id: string, @Body() updateWarehouseDto: UpdateWarehouseDto) {
-    return this.inventoryService.update(id, updateWarehouseDto);
+  @ApiOperation({ summary: 'Cập nhật thông tin kho  (Chỉ WAREHOUSE_MANAGER)' })
+  update(@Param('id') id: string, @Body() updateWarehouseDto: UpdateWarehouseDto, @CurrentUser() user: any) {
+    return this.inventoryService.update(id, updateWarehouseDto, user.id);
+  }
+
+  //  XÓA DANH MỤC
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xóa kho  (Chỉ WAREHOUSE_MANAGER)' })
+  remove(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.inventoryService.remove(id, user.id);
   }
   @Post('stock-in')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -51,7 +63,7 @@ export class InventoryController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xem danh sách hàng mỗi kho(WAREHOUSE_MANAGER)' })
+  @ApiOperation({ summary: 'Xem danh sách hàng mỗi kho(Chỉ WAREHOUSE_MANAGER)' })
   getInventories() {
     return this.inventoryService.getInventory();
   }

@@ -12,15 +12,14 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payment.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
-
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
     DatabaseModule,
-    UsersModule,
     AuthModule,
+    UsersModule,
     CategoriesModule, 
     ProductsModule,
     InventoryModule,
@@ -29,7 +28,7 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
     OrdersModule,
     PaymentsModule,
     NotificationsModule,
-    AuditLogsModule
+    AuditLogsModule,
   ],
   controllers: [],
   providers: [],

@@ -33,7 +33,7 @@ enum PaymentStatus{
 
 enum PaymentMethod{
   COD
-  VNPAY
+  STRIPE
 }
 
 enum AuditAction{
@@ -106,7 +106,7 @@ model Product {
   price       Float
 
   categoryId String
-  category   Category         @relation(fields: [categoryId], references: [id])
+  category   Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   variants   ProductVariant[]
 
   createdAt DateTime @default(now())
@@ -151,7 +151,7 @@ model Inventory {
   warehouseId  String
   warehouse    Warehouse              @relation(fields: [warehouseId], references: [id])
   variantId    String
-  variant      ProductVariant         @relation(fields: [variantId], references: [id])
+  variant      ProductVariant         @relation(fields: [variantId], references: [id], onDelete: Cascade)
   transactions InventoryTransaction[]
 
   updatedAt DateTime @updatedAt
@@ -166,7 +166,7 @@ model InventoryTransaction {
   quantity Int
 
   inventoryId String
-  inventory   Inventory @relation(fields: [inventoryId], references: [id])
+  inventory   Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
   userId      String
   user        User      @relation(fields: [userId], references: [id])
 

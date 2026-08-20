@@ -22,8 +22,8 @@ export class ProductsController {
   @Roles(Role.ADMIN) // Chỉ Admin mới được tạo sản phẩm
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Tạo sản phẩm & Biến thể cùng lúc (Chỉ ADMIN)' })
-  create(@Body() createProductDto: CreateProductDto) {
-    return this.productsService.create(createProductDto);
+  create(@Body() createProductDto: CreateProductDto, @CurrentUser() user: any) {
+    return this.productsService.create(createProductDto, user.id);
   }
 
   @Patch(':id')
@@ -47,8 +47,9 @@ export class ProductsController {
   addVariant(
     @Param('id') productId: string,
     @Body() createVariantDto: CreateProductVariantDto,
+    @CurrentUser() user: any
   ) {
-    return this.productsService.addVariant(productId, createVariantDto);
+    return this.productsService.addVariant(productId, createVariantDto, user.id);
   }
 
   @Get()
@@ -68,13 +69,13 @@ export class ProductsController {
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Xóa sản phẩm (Chỉ ADMIN)' })
-  remove(@Param('id') id: string) {
-    return this.productsService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.productsService.remove(id, user.id);
   }
 
   @Patch('variants/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN, Role.WAREHOUSE_MANAGER) // Có thể cho phép cả quản lý kho vào sửa
+  @Roles(Role.ADMIN, Role.WAREHOUSE_MANAGER) 
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Cập nhật biến thể sản phẩm (Size, Màu, Giá, Kho...)' })
   updateVariant(
@@ -85,9 +86,18 @@ export class ProductsController {
     return this.productsService.updateVariant(id, updateProductVariantDto, user.id);
   }
 
-  @Get(':id')
+  @Get('variants/:id')
   @ApiOperation({ summary: 'Lấy chi tiết một biến thể' })
   findOneVariant(@Param('id') id: string) {
     return this.productsService.findOneVariant(id);
   }
+
+  // @Delete('variants/:id')
+  // @UseGuards(JwtAuthGuard, RolesGuard)
+  // @Roles(Role.ADMIN)
+  // @ApiBearerAuth()
+  // @ApiOperation({ summary: 'Xóa biến thể (Chỉ ADMIN)' })
+  // removeVariant(@Param('id') id: string, @CurrentUser() user: any) {
+  //   return this.productsService.removeVariant(id, user.id);
+  // }
 }

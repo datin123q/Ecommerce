@@ -1,6 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '@prisma/client';
+import { UpdateProfileDto } from './dto/user-update.dto';
+import { UpdateRoleDto } from './dto/role-update.dto';
+import * as argon2 from 'argon2';
+import { Role } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
@@ -18,10 +22,67 @@ export class UsersService {
     });
   }
 
+  async updateUser(userId: string, data: Prisma.UserUpdateInput) {
+      const userExists = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!userExists) {
+        throw new NotFoundException(`Không tìm thấy tài khoản với ID: ${userId}`);
+      }
+
+      return this.prisma.user.update({
+        where: { id: userId },
+        data, 
+      });
+    }
+
   async updateRefreshToken(userId: string, refreshToken: string | null) {
     return this.prisma.user.update({
       where: { id: userId },
       data: { refreshToken },
+    });
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const userExists = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!userExists) throw new NotFoundException('Không tìm thấy tài khoản');
+
+    const dataToUpdate: any = {};
+
+    if (dto.fullName) {
+      dataToUpdate.fullName = dto.fullName;
+    }
+
+    if (dto.password) {
+      const hashedPassword = await argon2.hash(dto.password);
+      dataToUpdate.password = hashedPassword;
+    }
+    await this.prisma.notification.create({
+        data: {
+          userId: userId,
+          content: `Đã đổi thông tin thành công!`,
+          isRead: false
+        }
+      })
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: dataToUpdate,
+    });
+  }
+  async updateRole(userId: string, role: Role) {
+    const userExists = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!userExists) throw new NotFoundException('Không tìm thấy tài khoản');
+    await this.prisma.notification.create({
+        data: {
+          userId: userId,
+          content: `Bạn vừa được thay đổi quyền thành ${role}`,
+          isRead: false
+        }
+      })
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { role },
     });
   }
 }

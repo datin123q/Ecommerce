@@ -2,12 +2,12 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { PrismaService } from '../../database/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-
+import { AuditLogsService } from '../audit-logs/audit-logs.service';
 @Injectable()
 export class CategoriesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly auditLogsService: AuditLogsService) {}
 
-  async create(createCategoryDto: CreateCategoryDto) {
+  async create(createCategoryDto: CreateCategoryDto, adminId: string) {
     // 1. Kiểm tra xem tên danh mục đã tồn tại chưa (tránh lỗi trùng unique)
     const existingCategory = await this.prisma.category.findUnique({
       where: { name: createCategoryDto.name },
@@ -18,9 +18,20 @@ export class CategoriesService {
     }
 
     // 2. Tạo mới danh mục
-    return this.prisma.category.create({
+    const newCategory = await this.prisma.category.create({
       data: createCategoryDto,
     });
+
+    await this.auditLogsService.logAction(
+      adminId,
+      'CREATE',
+      'Category',
+      newCategory.id,
+      null,
+      newCategory
+    );
+    return newCategory;
+
   }
 
   async findAll() {
@@ -42,16 +53,34 @@ export class CategoriesService {
     return category;
   }
 
-  async update(id: string, updateCategoryDto: UpdateCategoryDto) {
-    await this.findOne(id); 
-    return this.prisma.category.update({
+  async update(id: string, updateCategoryDto: UpdateCategoryDto, adminId) {
+    const oldCategory = await this.findOne(id); 
+    const newCategory = await this.prisma.category.update({
       where: { id },
       data: updateCategoryDto,
     });
+    await this.auditLogsService.logAction(
+      adminId,
+      'UPDATE',
+      'Category',
+      id,
+      oldCategory,
+      newCategory
+    );
+    return newCategory;
   }
 
-  async remove(id: string) {
-    await this.findOne(id); // Kiểm tra tồn tại trước khi xóa
+  async remove(id: string, adminId:string) {
+    const oldCategory = await this.findOne(id); 
+    await this.auditLogsService.logAction(
+      adminId,
+      'DELETE',
+      'Category',
+      id,
+      oldCategory,
+      null
+    );
+
     return this.prisma.category.delete({
       where: { id },
     });

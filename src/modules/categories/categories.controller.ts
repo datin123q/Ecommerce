@@ -3,6 +3,7 @@ import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -20,8 +21,8 @@ export class CategoriesController {
   @Roles(Role.ADMIN)                   
   @ApiBearerAuth()                    
   @ApiOperation({ summary: 'Tạo danh mục mới (Chỉ ADMIN)' })
-  create(@Body() createCategoryDto: CreateCategoryDto) {
-    return this.categoriesService.create(createCategoryDto);
+  create(@Body() createCategoryDto: CreateCategoryDto, @CurrentUser() user: any) {
+    return this.categoriesService.create(createCategoryDto, user.id);
   }
 
   // XEM DANH MỤC 
@@ -43,8 +44,8 @@ export class CategoriesController {
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Cập nhật danh mục (Chỉ ADMIN)' })
-  update(@Param('id') id: string, @Body() updateCategoryDto: UpdateCategoryDto) {
-    return this.categoriesService.update(id, updateCategoryDto);
+  update(@Param('id') id: string, @Body() updateCategoryDto: UpdateCategoryDto, @CurrentUser() user: any) {
+    return this.categoriesService.update(id, updateCategoryDto, user.id);
   }
 
   //  XÓA DANH MỤC
@@ -53,7 +54,7 @@ export class CategoriesController {
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Xóa danh mục (Chỉ ADMIN)' })
-  remove(@Param('id') id: string) {
-    return this.categoriesService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.categoriesService.remove(id, user.id);
   }
 }
