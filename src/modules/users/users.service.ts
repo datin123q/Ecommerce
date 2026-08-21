@@ -3,12 +3,13 @@ import { PrismaService } from '../../database/prisma.service';
 import { Prisma } from '@prisma/client';
 import { UpdateProfileDto } from './dto/user-update.dto';
 import { UpdateRoleDto } from './dto/role-update.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 import * as argon2 from 'argon2';
 import { Role } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly notificationsService: NotificationsService) {}
 
   async findByEmail(email: string) {
     return this.prisma.user.findUnique({
@@ -58,13 +59,10 @@ export class UsersService {
       const hashedPassword = await argon2.hash(dto.password);
       dataToUpdate.password = hashedPassword;
     }
-    await this.prisma.notification.create({
-        data: {
-          userId: userId,
-          content: `Đã đổi thông tin thành công!`,
-          isRead: false
-        }
-      })
+    await this.notificationsService.pushNotificationToQueue(
+      userId, 
+      `Đổi thông tin thành công`
+    );
     return this.prisma.user.update({
       where: { id: userId },
       data: dataToUpdate,
@@ -73,13 +71,10 @@ export class UsersService {
   async updateRole(userId: string, role: Role) {
     const userExists = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!userExists) throw new NotFoundException('Không tìm thấy tài khoản');
-    await this.prisma.notification.create({
-        data: {
-          userId: userId,
-          content: `Bạn vừa được thay đổi quyền thành ${role}`,
-          isRead: false
-        }
-      })
+    await this.notificationsService.pushNotificationToQueue(
+      userId, 
+      `Bạn vừa được đổi quyền thành ${role}`
+    );
     return this.prisma.user.update({
       where: { id: userId },
       data: { role },

@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, @InjectQueue('notification-queue') private readonly notificationQueue: Queue,) {}
 
   // Lấy toàn bộ thông báo (mới nhất lên đầu)
   getUserNotifications(userId: string) {
@@ -37,5 +39,17 @@ export class NotificationsService {
       data: { isRead: true },
     });
     return { message: 'Đã đánh dấu đọc tất cả' };
+  }
+  async pushNotificationToQueue(userId: string, content: string) {
+    await this.notificationQueue.add(
+      'create-notification-job', // Tên job chung chung hơn
+      { userId, content },
+      { attempts: 3, removeOnComplete: true }
+    );
+  }
+  async createNotification(userId: string, content: string) {
+    return this.prisma.notification.create({
+      data: { userId, content, isRead: false },
+    });
   }
 }

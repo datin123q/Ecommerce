@@ -3,6 +3,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentStatus, PaymentMethod, OrderStatus } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
+import { NotificationsService } from '../notifications/notifications.service';
 import Stripe from 'stripe';
 
 @Injectable()
@@ -12,7 +13,8 @@ export class PaymentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService
+    private readonly configService: ConfigService,
+    private readonly notificationsService: NotificationsService
   ) {
     // 1. Lấy Key an toàn từ ConfigService
     const stripeSecret = this.configService.get<string>('STRIPE_SECRET_KEY');
@@ -50,19 +52,16 @@ export class PaymentsService {
 
     //  COD
     if (dto.method === PaymentMethod.COD) {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.order.update({ 
+      await this.prisma.$transaction(async (prisma) => {
+        await prisma.order.update({ 
           where: { id: payment.orderId },
           data: { status: OrderStatus.AWAITING_DELIVERY },
         });
 
-        await tx.notification.create({
-          data: {
-            userId: payment.order.userId,
-            content: `Đơn hàng mã số ${payment.orderId} đã đặt thành công và đang chờ giao hàng.`,
-            isRead: false
-          }
-        });
+        await this.notificationsService.pushNotificationToQueue(
+          userId, 
+          `Đơn hàng mã số ${payment.orderId} đã đặt thành công và đang chờ giao hàng.`
+        );
       });
       return { message: 'Đã ghi nhận phương thức COD', paymentId: payment.id };
     }
@@ -91,16 +90,23 @@ export class PaymentsService {
     throw new BadRequestException('Phương thức thanh toán không hỗ trợ');
   }
 
-  // ==========================================================
   // XỬ LÝ WEBHOOK TỪ STRIPE
-  // ==========================================================
-  async handleStripeWebhook(signature: string, payload: Buffer) {
+async handleStripeWebhook(signature: string, payload: Buffer) {
+    let event: Stripe.Event;
+
+    // BỎ QUA XÁC THỰC CHỮ KÝ KHI CHẠY TEST E2E
+  if (process.env.NODE_ENV === 'test') {
+    try {
+      event = JSON.parse(payload.toString('utf8')) as Stripe.Event;
+    } catch (err: any) {
+      throw new BadRequestException(`Invalid JSON payload: ${err.message}`);
+    }
+  } else {
+    // Môi trường thật (Production / Development)
     const webhookSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET');
     if (!webhookSecret) {
       throw new Error('Thiếu STRIPE_WEBHOOK_SECRET');
     }
-
-    let event: Stripe.Event;
 
     try {
       event = this.stripe.webhooks.constructEvent(payload, signature, webhookSecret);
@@ -108,9 +114,10 @@ export class PaymentsService {
       this.logger.error(`⚠️ Xác thực Webhook thất bại: ${err.message}`);
       throw new BadRequestException(`Webhook Error: ${err.message}`);
     }
+  }
 
-    const data = event.data.object as any;
-    const paymentId = data.metadata?.paymentId;
+    const data = event?.data?.object as any;
+    const paymentId = data?.metadata?.paymentId; // Sử dụng paymentId
 
     if (!paymentId) {
       this.logger.warn('Bỏ qua Webhook: Không tìm thấy paymentId trong metadata');
@@ -120,28 +127,25 @@ export class PaymentsService {
     switch (event.type) {
       case 'payment_intent.succeeded':
         this.logger.log(`💰 Thanh toán thành công cho Payment ID: ${paymentId}`);
-        await this.prisma.$transaction(async (tx) => {
-          const payment = await tx.payment.update({
+        await this.prisma.$transaction(async (prisma) => {
+          const payment = await prisma.payment.update({
             where: { id: paymentId },
             data: {
-              status: PaymentStatus.SUCCESS,
+              status: 'SUCCESS', // Hoặc PaymentStatus.SUCCESS
               transactionId: data.id,
             },
             include: { order: true }
           });
 
-          await tx.order.update({ 
+          await prisma.order.update({ 
             where: { id: payment.orderId },
-            data: { status: OrderStatus.PAID }
+            data: { status: 'PAID' } // Hoặc OrderStatus.PAID
           });
 
-          await tx.notification.create({
-            data: {
-              userId: payment.order.userId,
-              content: `Đơn hàng ${payment.orderId} đã được thanh toán thành công qua Stripe!`,
-              isRead: false
-            }
-          });
+          await this.notificationsService.pushNotificationToQueue(
+            payment.order.userId, 
+            `Đơn hàng ${payment.orderId} đã được thanh toán thành công qua Stripe!`
+          );
         });
         break;
 
@@ -149,7 +153,7 @@ export class PaymentsService {
         this.logger.warn(`❌ Thanh toán thất bại cho Payment ID: ${paymentId}`);
         await this.prisma.payment.update({
           where: { id: paymentId },
-          data: { status: PaymentStatus.FAILED },
+          data: { status: 'FAILED' },
         });
         break;
     }

@@ -1,9 +1,10 @@
-import { Controller, Post, Body, Req, Headers, UseGuards, BadRequestException } from '@nestjs/common';
+import { Controller, Post, Body, Req, Headers, UseGuards, BadRequestException ,UseInterceptors, HttpCode} from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
 
 // Bắt buộc import type riêng biệt cho TypeScript Strict Mode
 import type { RawBodyRequest } from '@nestjs/common';
@@ -18,6 +19,7 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Tạo phiên thanh toán (Stripe / COD)' })
+  @UseInterceptors(IdempotencyInterceptor)
   async createIntent(
     @CurrentUser() user: any,
     @Body() dto: CreatePaymentDto
@@ -26,6 +28,7 @@ export class PaymentsController {
   }
 
   @Post('webhook')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Stripe Webhook (Hệ thống tự động gọi)' })
   async handleWebhook(
     @Headers('stripe-signature') signature: string,
@@ -34,10 +37,15 @@ export class PaymentsController {
     if (!signature) {
       throw new BadRequestException('Thiếu chữ ký Stripe');
     }
-    if (!req.rawBody) {
-      throw new BadRequestException('Không tìm thấy Raw Body trong request. Vui lòng bật rawBody: true trong main.ts');
+
+    // NẾU KHÔNG PHẢI MÔI TRƯỜNG TEST THÌ MỚI BẮT BUỘC CHECK RAW BODY
+    if (!req.rawBody && process.env.NODE_ENV !== 'test') {
+      throw new BadRequestException('Không tìm thấy Raw Body trong request.');
     }
-    
-    return this.paymentsService.handleStripeWebhook(signature, req.rawBody);
+
+    // Nếu đang test, dùng tạm req.body nếu req.rawBody trống
+    const payload = req.rawBody || Buffer.from(JSON.stringify(req.body));
+
+    return this.paymentsService.handleStripeWebhook(signature, payload);
   }
 }

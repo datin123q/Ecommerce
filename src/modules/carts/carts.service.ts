@@ -1,10 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AddToCartDto } from './dto/add-to-cart.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+
 
 @Injectable()
 export class CartsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly notificationsService: NotificationsService) {}
 
   // Lấy giỏ hàng của User 
   async getMyCart(userId: string) {
@@ -43,13 +45,10 @@ export class CartsService {
     const existingCartItem = await this.prisma.cartItem.findFirst({
       where: { cartId: cart.id, variantId },
     });
-    await this.prisma.notification.create({
-      data: {
-        userId: userId,
-        content: `Thêm ${variant.product.name} vào giỏ hàng X ${quantity}`,
-        isRead: false
-      }
-    })
+    await this.notificationsService.pushNotificationToQueue(
+      userId, 
+      `Thêm ${variant.name} x ${addToCartDto.quantity} vào giỏ hàng`
+    );
     if (existingCartItem) {
       //  Cộng dồn số lượng
       return this.prisma.cartItem.update({
@@ -78,13 +77,11 @@ export class CartsService {
     });
 
     if (!item) throw new NotFoundException('Không tìm thấy sản phẩm trong giỏ của bạn');
-    await this.prisma.notification.create({
-      data: {
-        userId: userId,
-        content: `Xóa ${item.variant.name} khỏi giỏ hàng`,
-        isRead: false
-      }
-    })
+
+    await this.notificationsService.pushNotificationToQueue(
+      userId, 
+      `Xóa ${item.variant.name} khỏi giỏ hàng`
+    );
     return this.prisma.cartItem.delete({
       where: { id: cartItemId },
     });
