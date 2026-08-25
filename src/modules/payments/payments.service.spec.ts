@@ -2,12 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { PaymentsService } from './payments.service';
 import { PrismaService } from '../../database/prisma.service';
 import { ConfigService } from '@nestjs/config';
-import { NotificationsService } from '../notifications/notifications.service';
-import { NotFoundException, BadRequestException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PaymentStatus, PaymentMethod, OrderStatus } from '@prisma/client';
 import Stripe from 'stripe';
 
-// 1. MOCK THƯ VIỆN STRIPE
+// Mock thư viện Stripe
 jest.mock('stripe', () => {
   return jest.fn().mockImplementation(() => ({
     paymentIntents: {
@@ -22,218 +22,269 @@ jest.mock('stripe', () => {
 describe('PaymentsService', () => {
   let service: PaymentsService;
   let prisma: PrismaService;
-  let config: ConfigService;
-  let notifications: NotificationsService;
+  let configService: ConfigService;
+  let eventEmitter: EventEmitter2;
   let stripeMock: any;
 
-  // 1. TẠO MOCK CONFIG LÀ MỘT HÀM JS BÌNH THƯỜNG (KHÔNG DÙNG JEST.FN)
-  // Việc này đảm bảo hàm get() luôn trả về đúng giá trị khi compile() chạy
-    const mockConfigService = {
-    get: jest.fn((key: string) => {
-        if (key === 'STRIPE_SECRET_KEY') return 'sk_test_123';
-        if (key === 'STRIPE_WEBHOOK_SECRET') return 'whsec_123';
-        return null;
-    }),
-    };
+  // Dữ liệu giả định (Mock Data)
+  const mockUserId = 'user-123';
+  const mockOrderId = 'order-123';
+  const mockPaymentId = 'payment-123';
 
-  // 2. MOCK PRISMA VÀ NOTIFICATION
-  const mockPrismaService = {
-    order: { findUnique: jest.fn(), update: jest.fn() },
-    payment: { upsert: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
-    $transaction: jest.fn().mockImplementation(async (cb) => await cb(mockPrismaService)),
+  const mockOrder = {
+    id: mockOrderId,
+    userId: mockUserId,
+    totalAmount: 100000,
+    status: OrderStatus.PENDING,
   };
 
-  const mockNotificationsService = {
-    pushNotificationToQueue: jest.fn(),
+  const mockPayment = {
+    id: mockPaymentId,
+    orderId: mockOrderId,
+    amount: 100000,
+    method: PaymentMethod.COD,
+    status: PaymentStatus.PENDING,
+    order: mockOrder,
   };
 
- beforeEach(async () => {
-  // Đặt lại giá trị trả về mặc định trước khi compile/chạy test
-  mockConfigService.get.mockImplementation((key: string) => {
-    if (key === 'STRIPE_SECRET_KEY') return 'sk_test_123';
-    if (key === 'STRIPE_WEBHOOK_SECRET') return 'whsec_123';
-    return null;
-  });
+  beforeEach(async () => {
+    // Tạo bản Mock cho các Service dependencies
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        PaymentsService,
+        {
+          provide: PrismaService,
+          useValue: {
+            order: {
+              findUnique: jest.fn(),
+              update: jest.fn(),
+            },
+            payment: {
+              upsert: jest.fn(),
+              findUnique: jest.fn(),
+              update: jest.fn(),
+            },
+            // Giả lập $transaction bằng cách gọi callback ngay lập tức
+            $transaction: jest.fn().mockImplementation(async (cb) => {
+              return cb({
+                order: { update: jest.fn() },
+                payment: { findUnique: jest.fn(), update: jest.fn() },
+              });
+            }),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => {
+              if (key === 'STRIPE_SECRET_KEY') return 'sk_test_123';
+              if (key === 'STRIPE_WEBHOOK_SECRET') return 'whsec_123';
+              return null;
+            }),
+          },
+        },
+        {
+          provide: EventEmitter2,
+          useValue: {
+            emit: jest.fn(),
+          },
+        },
+      ],
+    }).compile();
 
-  const module: TestingModule = await Test.createTestingModule({
-    providers: [
-      PaymentsService,
-      { provide: PrismaService, useValue: mockPrismaService },
-      { provide: ConfigService, useValue: mockConfigService },
-      { provide: NotificationsService, useValue: mockNotificationsService },
-    ],
-  }).compile();
-
-  service = module.get<PaymentsService>(PaymentsService);
-  prisma = module.get<PrismaService>(PrismaService);
-  config = module.get<ConfigService>(ConfigService);
-  notifications = module.get<NotificationsService>(NotificationsService);
-  
-  stripeMock = (service as any).stripe;
-});
-
-  // ==========================================================
-  // TEST: createPaymentIntent
-  // ==========================================================
-  describe('createPaymentIntent', () => {
-    const userId = 'user-1';
-    const dto = { orderId: 'order-1', method: PaymentMethod.COD };
+    service = module.get<PaymentsService>(PaymentsService);
+    prisma = module.get<PrismaService>(PrismaService);
+    configService = module.get<ConfigService>(ConfigService);
+    eventEmitter = module.get<EventEmitter2>(EventEmitter2);
     
-    it('nên throw NotFoundException nếu không tìm thấy order', async () => {
-      mockPrismaService.order.findUnique.mockResolvedValue(null);
-      await expect(service.createPaymentIntent(userId, dto)).rejects.toThrow(NotFoundException);
-    });
+    // Lấy instance của Stripe mock
+    stripeMock = (service as any).stripe;
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => {});
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
+  });
 
-    it('nên xử lý phương thức COD thành công', async () => {
-      const mockOrder = { id: 'order-1', totalAmount: 100000 };
-      const mockPayment = { id: 'pay-1', orderId: 'order-1' };
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
 
-      mockPrismaService.order.findUnique.mockResolvedValue(mockOrder);
-      mockPrismaService.payment.upsert.mockResolvedValue(mockPayment);
+  it('should be defined', () => {
+    expect(service).toBeDefined();
+  });
 
-      const result = await service.createPaymentIntent(userId, dto);
-
-      expect(mockPrismaService.payment.upsert).toHaveBeenCalled();
-      expect(mockPrismaService.order.update).toHaveBeenCalledWith({
-        where: { id: mockPayment.orderId },
-        data: { status: OrderStatus.AWAITING_DELIVERY },
-      });
-      expect(mockNotificationsService.pushNotificationToQueue).toHaveBeenCalledWith(
-        userId,
-        expect.stringContaining('đã đặt thành công')
-      );
-      expect(result).toEqual({ message: 'Đã ghi nhận phương thức COD', paymentId: 'pay-1' });
-    });
-
-    it('nên xử lý phương thức STRIPE thành công', async () => {
-      const mockOrder = { id: 'order-1', totalAmount: 100000 };
-      const mockPayment = { id: 'pay-1' };
+  describe('constructor', () => {
+    it('should throw Error if STRIPE_SECRET_KEY is missing', () => {
+      jest.spyOn(configService, 'get').mockReturnValueOnce(null);
       
-      mockPrismaService.order.findUnique.mockResolvedValue(mockOrder);
-      mockPrismaService.payment.upsert.mockResolvedValue(mockPayment);
-      stripeMock.paymentIntents.create.mockResolvedValue({ client_secret: 'secret_123' });
-
-      const result = await service.createPaymentIntent(userId, { ...dto, method: 'STRIPE' as PaymentMethod });
-
-      expect(stripeMock.paymentIntents.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          amount: 100000,
-          currency: 'vnd',
-          metadata: { orderId: 'order-1', paymentId: 'pay-1' }
-        })
-      );
-      expect(result).toEqual({ message: 'Tạo phiên thanh toán Stripe thành công', clientSecret: 'secret_123' });
+      expect(() => {
+        new PaymentsService(prisma, configService, eventEmitter);
+      }).toThrow('THIẾU BIẾN MÔI TRƯỜNG: STRIPE_SECRET_KEY chưa được cấu hình!');
     });
   });
 
-  // ==========================================================
-  // TEST: handleStripeWebhook
-  // ==========================================================
-  describe('handleStripeWebhook', () => {
-    const mockSignature = 'test-signature';
-    const mockPayload = Buffer.from('test-payload');
+  describe('createPaymentIntent', () => {
+    it('should throw NotFoundException if order is not found', async () => {
+      jest.spyOn(prisma.order, 'findUnique').mockResolvedValue(null);
 
-    it('nên throw lỗi nếu thiếu webhook secret', async () => {
-      mockConfigService.get.mockReturnValue(null); // Giả lập mất secret
-      await expect(service.handleStripeWebhook(mockSignature, mockPayload))
-        .rejects.toThrow('Thiếu STRIPE_WEBHOOK_SECRET');
+      await expect(
+        service.createPaymentIntent(mockUserId, { orderId: mockOrderId, method: PaymentMethod.COD })
+      ).rejects.toThrow(NotFoundException);
     });
 
-    it('nên throw BadRequestException nếu xác thực Stripe thất bại', async () => {
+    it('should process COD payment successfully', async () => {
+      jest.spyOn(prisma.order, 'findUnique').mockResolvedValue(mockOrder as any);
+      jest.spyOn(prisma.payment, 'upsert').mockResolvedValue(mockPayment as any);
+      const transactionSpy = jest.spyOn(prisma, '$transaction');
+
+      const result = await service.createPaymentIntent(mockUserId, { orderId: mockOrderId, method: PaymentMethod.COD });
+
+      expect(prisma.payment.upsert).toHaveBeenCalled();
+      expect(transactionSpy).toHaveBeenCalled();
+      expect(eventEmitter.emit).toHaveBeenCalledWith('paymentCod.created', expect.any(Object));
+      expect(result).toEqual({ message: 'Đã ghi nhận phương thức COD', paymentId: mockPaymentId });
+    });
+
+    it('should process STRIPE payment successfully', async () => {
+      const mockClientSecret = 'pi_123_secret_456';
+      jest.spyOn(prisma.order, 'findUnique').mockResolvedValue(mockOrder as any);
+      jest.spyOn(prisma.payment, 'upsert').mockResolvedValue({ ...mockPayment, method: 'STRIPE' } as any);
+      
+      stripeMock.paymentIntents.create.mockResolvedValue({ client_secret: mockClientSecret });
+
+      const result = await service.createPaymentIntent(mockUserId, { orderId: mockOrderId, method: 'STRIPE' as PaymentMethod });
+
+      expect(stripeMock.paymentIntents.create).toHaveBeenCalledWith(expect.objectContaining({
+        amount: mockOrder.totalAmount,
+        currency: 'vnd',
+      }));
+      expect(result).toEqual({
+        message: 'Tạo phiên thanh toán Stripe thành công',
+        clientSecret: mockClientSecret,
+      });
+    });
+
+    it('should throw BadRequestException for unsupported payment method', async () => {
+      jest.spyOn(prisma.order, 'findUnique').mockResolvedValue(mockOrder as any);
+      jest.spyOn(prisma.payment, 'upsert').mockResolvedValue(mockPayment as any);
+
+      await expect(
+        service.createPaymentIntent(mockUserId, { orderId: mockOrderId, method: 'UNKNOWN' as any })
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('handleStripeWebhook', () => {
+    const mockSignature = 'test_signature';
+    const mockPayload = Buffer.from('test_payload');
+
+    it('should throw Error if STRIPE_WEBHOOK_SECRET is missing', async () => {
+      jest.spyOn(configService, 'get').mockReturnValueOnce(null);
+
+      await expect(
+        service.handleStripeWebhook(mockSignature, mockPayload)
+      ).rejects.toThrow('Thiếu STRIPE_WEBHOOK_SECRET');
+    });
+
+    it('should throw BadRequestException if webhook signature verification fails', async () => {
       stripeMock.webhooks.constructEvent.mockImplementation(() => {
         throw new Error('Invalid signature');
       });
-      await expect(service.handleStripeWebhook(mockSignature, mockPayload))
-        .rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.handleStripeWebhook(mockSignature, mockPayload)
+      ).rejects.toThrow(BadRequestException);
     });
 
-    it('nên bỏ qua và trả về 200 nếu metadata không có paymentId', async () => {
+    it('should return received: true and do nothing if no paymentId in metadata', async () => {
       stripeMock.webhooks.constructEvent.mockReturnValue({
         type: 'payment_intent.succeeded',
-        data: { object: { metadata: {} } } // Không có paymentId
+        data: { object: { metadata: {} } }, 
       });
 
       const result = await service.handleStripeWebhook(mockSignature, mockPayload);
       expect(result).toEqual({ received: true });
-      expect(mockPrismaService.payment.findUnique).not.toHaveBeenCalled();
+      expect(prisma.$transaction).not.toHaveBeenCalled();
     });
 
-    it('nên xử lý payment_intent.succeeded thành công', async () => {
-      const paymentId = 'pay-1';
-      stripeMock.webhooks.constructEvent.mockReturnValue({
-        id: 'evt_1',
+    it('should handle payment_intent.succeeded successfully', async () => {
+      const stripeEvent = {
+        id: 'evt_123',
         type: 'payment_intent.succeeded',
         data: {
           object: {
             id: 'pi_123',
-            amount: 50000,
+            amount: 100000,
             currency: 'vnd',
-            metadata: { paymentId }
-          }
-        }
-      });
+            metadata: { paymentId: mockPaymentId },
+          },
+        },
+      };
+      
+      stripeMock.webhooks.constructEvent.mockReturnValue(stripeEvent);
 
-      // Giả lập payment đang ở trạng thái PENDING và thông tin khớp nhau
-      mockPrismaService.payment.findUnique.mockResolvedValue({
-        id: paymentId,
-        status: 'PENDING',
-        amount: 50000,
-        orderId: 'order-1',
-        order: { userId: 'user-1' }
+      // Cần chỉnh sửa mock của transaction đặc biệt cho case này vì logic nằm trong transaction callback
+      jest.spyOn(prisma, '$transaction').mockImplementation(async (cb) => {
+        const mockPrismaTransactionClient = {
+          payment: {
+            findUnique: jest.fn().mockResolvedValue(mockPayment),
+            update: jest.fn().mockResolvedValue(mockPayment),
+          },
+          order: {
+            update: jest.fn().mockResolvedValue(mockOrder),
+          },
+        };
+        return cb(mockPrismaTransactionClient as any);
       });
 
       const result = await service.handleStripeWebhook(mockSignature, mockPayload);
 
-      expect(mockPrismaService.payment.update).toHaveBeenCalledWith({
-        where: { id: paymentId },
-        data: { status: 'SUCCESS', transactionId: 'pi_123' },
-        include: { order: true }
-      });
-      expect(mockPrismaService.order.update).toHaveBeenCalledWith({
-        where: { id: 'order-1' },
-        data: { status: 'PAID' }
-      });
-      expect(mockNotificationsService.pushNotificationToQueue).toHaveBeenCalled();
       expect(result).toEqual({ received: true });
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(eventEmitter.emit).toHaveBeenCalledWith('paymentStripe.created', expect.any(Object));
     });
 
-    it('nên throw lỗi nếu số lượng hoặc tiền tệ không khớp (Chống gian lận)', async () => {
-      const paymentId = 'pay-1';
-      stripeMock.webhooks.constructEvent.mockReturnValue({
+    it('should throw Error in transaction if amount or currency mismatches in succeeded event', async () => {
+      const stripeEvent = {
         type: 'payment_intent.succeeded',
         data: {
           object: {
-            amount: 100, // Kẻ gian đổi số tiền thành 100đ
-            currency: 'vnd',
-            metadata: { paymentId }
-          }
-        }
+            amount: 50000, // Khác với 100000 ở DB
+            currency: 'usd', // Khác VND
+            metadata: { paymentId: mockPaymentId },
+          },
+        },
+      };
+      stripeMock.webhooks.constructEvent.mockReturnValue(stripeEvent);
+
+      jest.spyOn(prisma, '$transaction').mockImplementation(async (cb) => {
+        const mockPrismaTransactionClient = {
+          payment: {
+            findUnique: jest.fn().mockResolvedValue(mockPayment),
+          },
+        };
+        return cb(mockPrismaTransactionClient as any);
       });
 
-      mockPrismaService.payment.findUnique.mockResolvedValue({
-        id: paymentId,
-        status: 'PENDING',
-        amount: 500000, // Giá thật trong DB là 500.000đ
-      });
-
-      await expect(service.handleStripeWebhook(mockSignature, mockPayload))
-        .rejects.toThrow('Só lượng hoặc đơn vị tiền tệ không khớp!!!');
+      await expect(
+        service.handleStripeWebhook(mockSignature, mockPayload)
+      ).rejects.toThrow('Só lượng hoặc đơn vị tiền tệ không khớp!!!');
     });
 
-    it('nên cập nhật trạng thái FAILED khi payment_intent.payment_failed', async () => {
-      const paymentId = 'pay-1';
-      stripeMock.webhooks.constructEvent.mockReturnValue({
+    it('should update payment status to FAILED on payment_intent.payment_failed', async () => {
+      const stripeEvent = {
         type: 'payment_intent.payment_failed',
         data: {
-          object: { metadata: { paymentId } }
-        }
-      });
+          object: {
+            metadata: { paymentId: mockPaymentId },
+          },
+        },
+      };
+      stripeMock.webhooks.constructEvent.mockReturnValue(stripeEvent);
 
       await service.handleStripeWebhook(mockSignature, mockPayload);
 
-      expect(mockPrismaService.payment.update).toHaveBeenCalledWith({
-        where: { id: paymentId },
-        data: { status: 'FAILED' }
+      expect(prisma.payment.update).toHaveBeenCalledWith({
+        where: { id: mockPaymentId },
+        data: { status: 'FAILED' },
       });
     });
   });

@@ -2,10 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { OnEvent } from '@nestjs/event-emitter';
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService, @InjectQueue('notification-queue') private readonly notificationQueue: Queue,) {}
+  constructor(private readonly prisma: PrismaService, @InjectQueue('notification-queue') private readonly notificationQueue: Queue) {}
 
   // Lấy toàn bộ thông báo (mới nhất lên đầu)
   getUserNotifications(userId: string) {
@@ -50,6 +51,84 @@ export class NotificationsService {
   async createNotification(userId: string, content: string) {
     return this.prisma.notification.create({
       data: { userId, content, isRead: false },
+    });
+  }
+
+  @OnEvent('order.created')
+  async handleOrderCreatedEvent(payload: any) {
+    const { userId, content } = payload;
+    return this.prisma.notification.create({
+      data: { 
+        userId, 
+        content, 
+        isRead: false 
+      },
+    });
+  }
+  @OnEvent('cartItem.created')
+  async handleCartItemCreatedEvent(payload: any) {
+    const { userId, content } = payload;
+    return this.prisma.notification.create({
+      data: { 
+        userId, 
+        content, 
+        isRead: false 
+      },
+    });
+  }
+  @OnEvent('cartItem.delete')
+  async handleCartItemDeleteEvent(payload: any) {
+    const { userId, content } = payload;
+    return this.prisma.notification.create({
+      data: { 
+        userId, 
+        content, 
+        isRead: false 
+      },
+    });
+  }
+  @OnEvent('paymentCod.created')
+  async handlepaymentCodCreatedEvent(payload: any) {
+    const { userId, content } = payload;
+    return this.prisma.notification.create({
+      data: { 
+        userId, 
+        content, 
+        isRead: false 
+      },
+    });
+  }
+  @OnEvent('paymentStripe.created')
+  async handlepaymentStripeCreatedEvent(payload: any) {
+    const { userId, content } = payload;
+    return this.prisma.notification.create({
+      data: { 
+        userId, 
+        content, 
+        isRead: false 
+      },
+    });
+  }
+  @OnEvent('profile.update')
+  async handleProfileUpdateEvent(payload: any) {
+    const { userId, content } = payload;
+    return this.prisma.notification.create({
+      data: { 
+        userId, 
+        content, 
+        isRead: false 
+      },
+    });
+  }
+  @OnEvent('role.update')
+  async handleRoleUpdateEvent(payload: any) {
+    const { userId, content } = payload;
+    return this.prisma.notification.create({
+      data: { 
+        userId, 
+        content, 
+        isRead: false 
+      },
     });
   }
 }

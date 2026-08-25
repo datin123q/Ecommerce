@@ -2,11 +2,11 @@ import { Injectable, BadRequestException, ConflictException, NotFoundException }
 import { PrismaService } from '../../database/prisma.service';
 import { CreateVoucherDto } from './dto/create-voucher.dto';
 import { UpdateVoucherDto } from './dto/update-voucher.dto';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class VouchersService {
-  constructor(private readonly prisma: PrismaService, private readonly auditLogsService: AuditLogsService) {}
+  constructor(private readonly prisma: PrismaService,   private readonly eventEmitter: EventEmitter2) {}
 
   //  Tạo mã giảm giá
   async create(createVoucherDto: CreateVoucherDto, adminId: string) {
@@ -18,15 +18,15 @@ export class VouchersService {
     const newVoucher = await this.prisma.voucher.create({
       data: createVoucherDto, 
     });
-    await this.auditLogsService.logAction(
-      adminId,
-      'CREATE',
-      'Voucher',
-      newVoucher.id,
-      null,        
-      newVoucher,   
-      this.prisma,
-    );
+      this.eventEmitter.emit('voucher.created', {
+        id: adminId,
+        action: 'CREATE',
+        entity: 'Voucher',
+        entityId: newVoucher.id,
+        oldValue: null,        
+        newValue: newVoucher,   
+        tx: this.prisma
+      });
     return newVoucher;
   }
 
@@ -75,15 +75,15 @@ export class VouchersService {
     });
 
     // 3. Ghi lại Audit Log
-    await this.auditLogsService.logAction(
-      adminId,
-      'UPDATE',
-      'Voucher', 
-      voucherId,
-      oldVoucher,
-      newVoucher,
-      this.prisma,
-    );
+    this.eventEmitter.emit('voucher.update', {
+      id: adminId,
+      action: 'UPDATE',
+      entity: 'Voucher',
+      entityId: voucherId,
+      oldValue: oldVoucher,        
+      newValue: newVoucher,   
+      tx: this.prisma
+    });
 
     return newVoucher;
   }
@@ -106,15 +106,15 @@ export class VouchersService {
     });
 
     // 3. Ghi lại Audit Log
-    await this.auditLogsService.logAction(
-      adminId,
-      'UPDATE',
-      'Voucher', 
-      voucherId,
-      oldVoucher,
-      newVoucher,
-      this.prisma,
-    );
+    this.eventEmitter.emit('voucher.delete', {
+      id: adminId,
+      action: 'DELETE',
+      entity: 'Voucher',
+      entityId: voucherId,
+      oldValue: oldVoucher,        
+      newValue: newVoucher,   
+      tx: this.prisma
+    });
     return newVoucher;
   }
 }

@@ -2,22 +2,24 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../../database/prisma.service';
 import { getQueueToken } from '@nestjs/bullmq';
-import { describe } from 'node:test';
 
 describe('NotificationsService', () => {
   let service: NotificationsService;
   let prisma: PrismaService;
+  let queue: any; 
 
   // 1. TẠO CÁC BẢN SAO GIẢ MẠO (MOCKS)
   const mockPrismaService = {
     notification: {
-      count: jest.fn(), // Tạo một hàm giả cho lệnh count
+      findMany: jest.fn(),
+      count: jest.fn(),
       updateMany: jest.fn(),
+      create: jest.fn(), 
     },
   };
 
   const mockQueue = {
-    add: jest.fn(), // Tạo một hàm giả cho lệnh đẩy Queue
+    add: jest.fn(), 
   };
 
   beforeEach(async () => {
@@ -31,8 +33,9 @@ describe('NotificationsService', () => {
       ],
     }).compile();
 
-    service = module.get(NotificationsService);
-    prisma = module.get(PrismaService);
+    service = module.get<NotificationsService>(NotificationsService);
+    prisma = module.get<PrismaService>(PrismaService);
+    queue = module.get(getQueueToken('notification-queue'));
   });
 
   // 3. XÓA SẠCH LỊCH SỬ GỌI HÀM GIẢ SAU MỖI BÀI TEST
@@ -40,22 +43,17 @@ describe('NotificationsService', () => {
     jest.clearAllMocks();
   });
 
-  //  BẮT ĐẦU TEST 
-
+  // ==========================================================
+  // BẮT ĐẦU TEST CÁC HÀM CÓ SẴN TRONG MẪU
+  // ==========================================================
   describe('getUnreadCount', () => {
     it('phải trả về đúng số lượng thông báo chưa đọc', async () => {
-      // BƯỚC A: Setup kịch bản (Giả sử DB trả về có 5 thông báo)
       const fakeUserId = 'user-123';
       mockPrismaService.notification.count.mockResolvedValue(5);
 
-      // BƯỚC B: Chạy hàm cần test
       const result = await service.getUnreadCount(fakeUserId);
 
-      // BƯỚC C: Khẳng định kết quả (Expectations)
-      // 1. Kết quả trả về phải là { unreadCount: 5 }
       expect(result).toEqual({ unreadCount: 5 });
-      
-      // 2. Prisma phải được gọi đúng 1 lần với điều kiện (where) chính xác
       expect(prisma.notification.count).toHaveBeenCalledTimes(1);
       expect(prisma.notification.count).toHaveBeenCalledWith({
         where: { userId: fakeUserId, isRead: false },
@@ -65,75 +63,157 @@ describe('NotificationsService', () => {
 
   describe('markAsRead', () => {
     it('Nên gọi prisma updateMany với đúng tham số và trả về thông báo thành công', async () => {
-      // Arrange - Chuẩn bị dữ liệu
       const fakeUserId = 'user-123';
       const fakeNotificationId = 'notif-456';
       mockPrismaService.notification.updateMany.mockResolvedValue({ count: 1 });
 
-      // Act - Gọi hàm cần test
       const result = await service.markAsRead(fakeUserId, fakeNotificationId);
 
-      // Assert - Kiểm tra kết quả
-      // Kiểm tra xem hàm updateMany có được gọi với đúng tham số không
       expect(mockPrismaService.notification.updateMany).toHaveBeenCalledTimes(1);
       expect(mockPrismaService.notification.updateMany).toHaveBeenCalledWith({
         where: { id: fakeNotificationId, userId: fakeUserId },
         data: { isRead: true },
       });
-
-      // Kiểm tra kết quả trả về của hàm markAsRead có đúng như kỳ vọng không
       expect(result).toEqual({ message: 'Đã đánh dấu đọc' });
     });
 
-    it('Nên ném ra lỗi (throw error) nếu Prisma gặp vấn đề (VD: mất kết nối DB)', async () => {
-      // Arrange
+    it('Nên ném ra lỗi (throw error) nếu Prisma gặp vấn đề', async () => {
       const fakeUserId = 'user-123';
       const fakeNotificationId = 'notif-456';
       const dbError = new Error('Database connection lost');
 
-      // Giả lập lỗi từ Prisma
       mockPrismaService.notification.updateMany.mockRejectedValue(dbError);
 
-      // Act & Assert
       await expect(service.markAsRead(fakeUserId, fakeNotificationId))
         .rejects
         .toThrow('Database connection lost');
     });
   });
-  describe('markAllRead', () => {
+
+  describe('markAllAsRead', () => {
     it('Nên gọi prisma updateMany với đúng tham số và trả về thông báo thành công', async () => {
-      // Arrange - Chuẩn bị dữ liệu
       const fakeUserId = 'user-123';
       mockPrismaService.notification.updateMany.mockResolvedValue({ count: 1 });
 
-      // Act - Gọi hàm cần test
       const result = await service.markAllAsRead(fakeUserId);
 
-      // Assert - Kiểm tra kết quả
-      // Kiểm tra xem hàm updateMany có được gọi với đúng tham số không
       expect(mockPrismaService.notification.updateMany).toHaveBeenCalledTimes(1);
       expect(mockPrismaService.notification.updateMany).toHaveBeenCalledWith({
-        where: { userId: fakeUserId , isRead: false},
+        where: { userId: fakeUserId, isRead: false },
         data: { isRead: true },
       });
-
-      // Kiểm tra kết quả trả về của hàm markAsRead có đúng như kỳ vọng không
       expect(result).toEqual({ message: 'Đã đánh dấu đọc tất cả' });
     });
 
-    it('Nên ném ra lỗi (throw error) nếu Prisma gặp vấn đề (VD: mất kết nối DB)', async () => {
-      // Arrange
+    it('Nên ném ra lỗi (throw error) nếu Prisma gặp vấn đề', async () => {
       const fakeUserId = 'user-123';
-      const fakeNotificationId = 'notif-456';
       const dbError = new Error('Database connection lost');
 
-      // Giả lập lỗi từ Prisma
       mockPrismaService.notification.updateMany.mockRejectedValue(dbError);
 
-      // Act & Assert
       await expect(service.markAllAsRead(fakeUserId))
         .rejects
         .toThrow('Database connection lost');
+    });
+  });
+
+  // ==========================================================
+  // TEST CÁC HÀM MỚI BỔ SUNG
+  // ==========================================================
+  describe('getUserNotifications', () => {
+    it('phải trả về danh sách thông báo được sắp xếp mới nhất lên đầu', async () => {
+      const fakeUserId = 'user-123';
+      const fakeNotifications = [
+        { id: '1', content: 'Test 1' },
+        { id: '2', content: 'Test 2' },
+      ];
+      mockPrismaService.notification.findMany.mockResolvedValue(fakeNotifications);
+
+      const result = await service.getUserNotifications(fakeUserId);
+
+      expect(result).toEqual(fakeNotifications);
+      expect(prisma.notification.findMany).toHaveBeenCalledWith({
+        where: { userId: fakeUserId },
+        orderBy: { createdAt: 'desc' },
+      });
+    });
+  });
+
+  describe('pushNotificationToQueue', () => {
+    it('phải gọi hàm add của queue với đúng tên job, payload và options', async () => {
+      const fakeUserId = 'user-123';
+      const fakeContent = 'Bạn có đơn hàng mới';
+
+      await service.pushNotificationToQueue(fakeUserId, fakeContent);
+
+      expect(queue.add).toHaveBeenCalledTimes(1);
+      expect(queue.add).toHaveBeenCalledWith(
+        'create-notification-job',
+        { userId: fakeUserId, content: fakeContent },
+        { attempts: 3, removeOnComplete: true }
+      );
+    });
+  });
+
+  describe('createNotification', () => {
+    it('phải tạo một thông báo mới với trạng thái isRead = false', async () => {
+      const fakeUserId = 'user-123';
+      const fakeContent = 'Thông báo test';
+      const expectedResult = { id: 'new-id', userId: fakeUserId, content: fakeContent, isRead: false };
+      
+      mockPrismaService.notification.create.mockResolvedValue(expectedResult);
+
+      const result = await service.createNotification(fakeUserId, fakeContent);
+
+      expect(result).toEqual(expectedResult);
+      expect(prisma.notification.create).toHaveBeenCalledWith({
+        data: { userId: fakeUserId, content: fakeContent, isRead: false },
+      });
+    });
+  });
+
+  // ==========================================================
+  // TEST CÁC EVENT HANDLERS (Do logic giống hệt nhau nên gom lại)
+  // ==========================================================
+  describe('Event Handlers', () => {
+    const fakePayload = { userId: 'user-123', content: 'Nội dung event' };
+    const expectedDbCall = {
+      data: { userId: fakePayload.userId, content: fakePayload.content, isRead: false },
+    };
+
+    it('handleOrderCreatedEvent nên tạo thông báo', async () => {
+      await service.handleOrderCreatedEvent(fakePayload);
+      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
+    });
+
+    it('handleCartItemCreatedEvent nên tạo thông báo', async () => {
+      await service.handleCartItemCreatedEvent(fakePayload);
+      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
+    });
+
+    it('handleCartItemDeleteEvent nên tạo thông báo', async () => {
+      await service.handleCartItemDeleteEvent(fakePayload);
+      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
+    });
+
+    it('handlepaymentCodCreatedEvent nên tạo thông báo', async () => {
+      await service.handlepaymentCodCreatedEvent(fakePayload);
+      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
+    });
+
+    it('handlepaymentStripeCreatedEvent nên tạo thông báo', async () => {
+      await service.handlepaymentStripeCreatedEvent(fakePayload);
+      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
+    });
+
+    it('handleProfileUpdateEvent nên tạo thông báo', async () => {
+      await service.handleProfileUpdateEvent(fakePayload);
+      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
+    });
+
+    it('handleRoleUpdateEvent nên tạo thông báo', async () => {
+      await service.handleRoleUpdateEvent(fakePayload);
+      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
     });
   });
 });

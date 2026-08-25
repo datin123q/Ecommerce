@@ -3,9 +3,9 @@ import { PrismaService } from '../../database/prisma.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { PaymentStatus, PaymentMethod, OrderStatus } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
-import { NotificationsService } from '../notifications/notifications.service';
 import Stripe from 'stripe';
 import { tryCatch } from 'bullmq';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class PaymentsService {
@@ -15,7 +15,7 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
-    private readonly notificationsService: NotificationsService,
+    private readonly eventEmitter: EventEmitter2,
   ) {
     // 1. Lấy Key an toàn từ ConfigService
     const stripeSecret = this.configService.get<string>('STRIPE_SECRET_KEY');
@@ -58,11 +58,10 @@ export class PaymentsService {
           where: { id: payment.orderId },
           data: { status: OrderStatus.AWAITING_DELIVERY },
         });
-
-        await this.notificationsService.pushNotificationToQueue(
-          userId, 
-          `Đơn hàng mã số ${payment.orderId} đã đặt thành công và đang chờ giao hàng.`
-        );
+      });
+      this.eventEmitter.emit('paymentCod.created', {
+        userId: userId,
+        content: `Đơn hàng mã số ${payment.orderId} đã đặt thành công và đang chờ giao hàng.`
       });
       return { message: 'Đã ghi nhận phương thức COD', paymentId: payment.id };
     }
@@ -74,7 +73,7 @@ export class PaymentsService {
         currency: 'vnd',
         automatic_payment_methods: {
           enabled: true,
-          allow_redirects: 'never', // Cấm các phương thức yêu cầu chuyển hướng
+          allow_redirects: 'never', 
         },
         metadata: {
           orderId: order.id,
@@ -155,10 +154,10 @@ async handleStripeWebhook(signature: string, payload: Buffer) {
         });
         if(isPaymentJustCompleted && targetUserId){
           try {
-            await this.notificationsService.pushNotificationToQueue(
-              targetUserId, 
-              `Đơn hàng đã được thanh toán thành công qua Stripe!`
-            );
+            this.eventEmitter.emit('paymentStripe.created', {
+              userId: targetUserId,
+              content: `Đơn hàng đã được thanh toán thành công qua Stripe!`
+            });
           } catch (queueError){
             this.logger.error(`Bỏ lỡ thông báo!! `);
           }

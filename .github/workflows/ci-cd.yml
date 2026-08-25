@@ -11,8 +11,14 @@ jobs:
   # --- GIAI ĐOẠN 1: KIỂM TRA & BIÊN DỊCH ---
   build-and-test:
     runs-on: ubuntu-latest
+    
     env:
       DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
+      JWT_ACCESS_SECRET: "dummy_access"
+      JWT_REFRESH_SECRET: "dummy_refresh"
+      STRIPE_SECRET_KEY: "dummy_stripe"
+      STRIPE_WEBHOOK_SECRET: "dummy_webhook"
+
     steps:
       - name:  Kéo source code về máy chủ GitHub
         uses: actions/checkout@v3

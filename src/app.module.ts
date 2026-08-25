@@ -15,6 +15,7 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-redis-yet';
 import { BullModule } from '@nestjs/bullmq';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import * as Joi from 'joi';
 
 
@@ -61,6 +62,7 @@ import * as Joi from 'joi';
       }),
       inject: [ConfigService],
     }),
+    EventEmitterModule.forRoot(),
     DatabaseModule,
     AuthModule,
     UsersModule,

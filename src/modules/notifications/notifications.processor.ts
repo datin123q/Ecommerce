@@ -22,8 +22,7 @@ export class NotificationProcessor extends WorkerHost {
         );
         this.logger.log(`[Worker] ✅ Đã lưu thông báo cho User ${job.data.userId}`);
         break;
-        
-      // THÊM DEFAULT: Cực kỳ quan trọng để bắt lỗi nếu gõ sai tên job
+
       default:
         this.logger.warn(`[Worker] ⚠️ Bỏ qua Job vì không nhận diện được tên: ${job.name}`);
     }

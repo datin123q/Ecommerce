@@ -3,11 +3,12 @@ import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { TransactionType } from '@prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
 
-  constructor(private readonly prisma: PrismaService, private readonly notificationsService: NotificationsService,) {}
+  constructor(private readonly prisma: PrismaService, private readonly eventEmitter: EventEmitter2) {}
   
   async createOrder(userId: string, dto: CreateOrderDto) {
     // 1. VALIDATE CART 
@@ -116,8 +117,6 @@ const variantIds = cart.cartItems.map(item => item.variantId);
         include: { orderItems: true },
       });
 
-
-    // Dùng updateMany để gài điều kiện gte 
     const updateInventoryPromises = inventoryDeductions.map(deduction => 
       prisma.inventory.updateMany({
         where: { 
@@ -175,17 +174,13 @@ const variantIds = cart.cartItems.map(item => item.variantId);
     });
 
     // 5. PUSH BACKGROUND JOBS
-    this.pushBackgroundJobs(order.id, userId);
+    this.eventEmitter.emit('order.created', {
+    userId: order.userId,
+    content: `Đơn hàng mã số ${order.id} đã được xác nhận`
+  });
 
     // 6. RETURN ORDER
     return order;
-  }
-
-  private pushBackgroundJobs(orderId: string, userId: string) {
-    return this.notificationsService.pushNotificationToQueue(
-      userId, 
-      `Đơn hàng mã số ${orderId} đã được xác nhận`
-    );
   }
 
   // Xem lịch sử đơn hàng

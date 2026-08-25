@@ -1,81 +1,196 @@
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from './app.module';
-import { ValidationPipe, Logger } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import * as request from 'supertest';
+import { AppModule } from './../src/app.module';
+import { PrismaService } from './../src/database/prisma.service';
+import { getQueueToken } from '@nestjs/bullmq';
 
-import { WinstonModule, utilities as nestWinstonModuleUtilities } from 'nest-winston'; 
-import * as winston from 'winston';
-import DailyRotateFile from 'winston-daily-rotate-file'; 
-import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+describe('Main E2E Flow - Đăng ký đến Thanh toán COD', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
 
-async function bootstrap() {
-  // 1. CẤU HÌNH WINSTON LOGGER TRƯỚC
-  const winstonLogger = WinstonModule.createLogger({
-    transports: [
-      new winston.transports.Console({
-        format: winston.format.combine(
-          winston.format.timestamp(),
-          nestWinstonModuleUtilities.format.nestLike('E-Commerce', {
-            colors: true,
-            prettyPrint: true,
-          }),
-        ),
-      }),
-      new DailyRotateFile({
-        filename: 'logs/error-%DATE%.log',
-        datePattern: 'YYYY-MM-DD',
-        level: 'error',
-        format: winston.format.combine(
-          winston.format.timestamp(),
-          winston.format.json()
-        ),
-      }),
-    ],
-  });
+  // Biến lưu trữ xuyên suốt các bước
+  let accessToken: string;
+  let variantId: string;
+  let warehouseId: string;
+  const voucherCode = 'DISCOUNT50K';
+  let orderId: string;
 
-  // 2. BƠM WINSTON VÀO APP (Vẫn giữ nguyên rawBody: true của anh)
-  const app = await NestFactory.create(AppModule, { 
-    rawBody: true,
-    logger: winstonLogger, 
-  });
-  
-  app.enableCors();
-  const logger = new Logger('Bootstrap');
+  const testUser = {
+    email: 'flow_tester@example.com',
+    password: 'Password123!',
+    fullName: 'Flow Tester',
+  };
 
-  app.setGlobalPrefix('api/v1');
+  // Mock BullMQ Queue để không cần Redis khi chạy test
+  const mockQueue = {
+    add: jest.fn().mockResolvedValue({ id: 'job-1' }),
+  };
 
-  // 3. KÍCH HOẠT GLOBAL EXCEPTION FILTER TẠI ĐÂY
-  app.useGlobalFilters(new GlobalExceptionFilter());
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    })
+      .overrideProvider(getQueueToken('notification-queue'))
+      .useValue(mockQueue)
+      .compile();
 
-  // Kích hoạt Validation Pipe toàn cục (bắt buộc để DTO hoạt động)
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true, // Tự động loại bỏ các field thừa không được khai báo trong DTO
-      forbidNonWhitelisted: true, // Báo lỗi 400 nếu client cố tình gửi trường không hợp lệ
-      transform: true, // Tự động convert kiểu dữ liệu (vd: chuỗi số sang number)
-    }),
-  );
-
-  // Cấu hình Swagger OpenAPI UI
-  const config = new DocumentBuilder()
-    .setTitle('EcommerceCore API')
-    .setDescription('')
-    .setVersion('')
-    .addBearerAuth() 
-    .build();
+    app = moduleFixture.createNestApplication();
     
-  const document = SwaggerModule.createDocument(app, config);
+    // Đồng bộ Global Prefix và ValidationPipe y hệt file main.ts của bạn
+    app.setGlobalPrefix('api/v1');
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
 
-  SwaggerModule.setup('api', app, document, {
-    swaggerOptions: {
-      persistAuthorization: true, 
-    },
+    await app.init();
+    prisma = app.get<PrismaService>(PrismaService);
+
+    // =========================================================
+    // DỌN DẸP & SEED DỮ LIỆU MẪU (Thứ tự ngược để tránh lỗi khóa ngoại)
+    // =========================================================
+    await prisma.voucherUsage.deleteMany();
+    await prisma.orderItem.deleteMany();
+    await prisma.payment.deleteMany();
+    await prisma.order.deleteMany();
+    await prisma.cartItem.deleteMany();
+    await prisma.cart.deleteMany();
+    await prisma.inventoryTransaction.deleteMany();
+    await prisma.inventory.deleteMany();
+    await prisma.productVariant.deleteMany();
+    await prisma.product.deleteMany();
+    await prisma.category.deleteMany();
+    await prisma.voucher.deleteMany();
+    await prisma.user.deleteMany({ where: { email: testUser.email } });
+
+    // 1. Tạo Category & Product + Variant
+    const category = await prisma.category.create({ data: { name: 'Điện Thoại E2E' } });
+    const product = await prisma.product.create({
+      data: {
+        name: 'iPhone E2E Test',
+        description: 'Test phone',
+        price: 1000000, // 1,000,000 VND
+        categoryId: category.id,
+        variants: {
+          create: [{ sku: 'IPHONE-E2E-01', name: 'iPhone 15', variant: '128GB' }],
+        },
+      },
+      include: { variants: true },
+    });
+    variantId = product.variants[0].id;
+
+    // 2. Tạo Kho & Tồn kho (Nhập sẵn 10 cái)
+    const warehouse = await prisma.warehouse.create({ data: { name: 'Kho E2E' } });
+    warehouseId = warehouse.id;
+    await prisma.inventory.create({
+      data: { warehouseId, variantId, quantity: 10 },
+    });
+
+    // 3. Tạo Voucher giảm giá (Giảm 100,000 VND)
+    await prisma.voucher.create({
+      data: {
+        code: voucherCode,
+        value: 100000,
+        limit: 10,
+        count: 0,
+      },
+    });
   });
 
-  const port = process.env.PORT || 3000;
-  await app.listen(port);
-  
-  logger.log(`Server is running at: http://localhost:${port}/api/v1`);
-  logger.log(`Swagger UI is available at: http://localhost:${port}/api`);
-}
-bootstrap();
+  afterAll(async () => {
+    await app.close();
+  });
+
+  // ==========================================================
+  // BƯỚC 1: XÁC THỰC (ĐĂNG KÝ & ĐĂNG NHẬP)
+  // ==========================================================
+  it('1. Đăng ký tài khoản mới', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send(testUser)
+      .expect(201);
+
+    expect(res.body).toHaveProperty('id');
+    expect(res.body.email).toBe(testUser.email);
+  });
+
+  it('2. Đăng nhập lấy AccessToken', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: testUser.email, password: testUser.password })
+      .expect(200);
+
+    expect(res.body).toHaveProperty('accessToken');
+    accessToken = res.body.accessToken;
+  });
+
+  // ==========================================================
+  // BƯỚC 2: QUẢN LÝ GIỎ HÀNG
+  // ==========================================================
+  it('3. Thêm sản phẩm vào giỏ hàng', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/carts')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ variantId, quantity: 2 }) // Mua 2 chiếc
+      .expect(201);
+
+    expect(res.body).toHaveProperty('id');
+    expect(res.body.quantity).toBe(2);
+  });
+
+  // ==========================================================
+  // BƯỚC 3: ĐẶT HÀNG KÈM VOUCHER & KIỂM TRA TỒN KHO
+  // ==========================================================
+  it('4. Tiến hành đặt hàng (Áp dụng Voucher)', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/orders')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ voucherCode })
+      .expect(201);
+
+    orderId = res.body.id;
+    expect(orderId).toBeDefined();
+
+    // Tính toán tiền: (1,000,000 * 2 sản phẩm) - 100,000 voucher = 1,900,000 VND
+    expect(res.body.totalAmount).toBe(1900000);
+
+    // --- KIỂM TRA CHÉO DB DƯỚI NỀN ---
+    // Tồn kho phải bị trừ 2 (Từ 10 xuống 8)
+    const inventory = await prisma.inventory.findUnique({
+      where: { warehouseId_variantId: { warehouseId, variantId } },
+    });
+    expect(inventory?.quantity).toBe(8);
+
+    // Giỏ hàng phải được dọn sạch hoàn toàn
+    const cartItems = await prisma.cartItem.findMany({ where: { variantId } });
+    expect(cartItems.length).toBe(0);
+
+    // Lượt sử dụng Voucher phải tăng lên 1
+    const voucher = await prisma.voucher.findUnique({ where: { code: voucherCode } });
+    expect(voucher?.count).toBe(1);
+  });
+
+  // ==========================================================
+  // BƯỚC 4: THANH TOÁN (COD)
+  // ==========================================================
+  it('5. Chọn phương thức thanh toán COD cho đơn hàng', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/api/v1/payments')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        orderId: orderId,
+        method: 'COD',
+      })
+      .expect(201);
+
+    expect(res.body.message).toBe('Đã ghi nhận phương thức COD');
+
+    // Trạng thái Đơn hàng phải chuyển sang chờ giao hàng (`AWAITING_DELIVERY`)
+    const updatedOrder = await prisma.order.findUnique({ where: { id: orderId } });
+    expect(updatedOrder?.status).toBe('AWAITING_DELIVERY');
+  });
+});
