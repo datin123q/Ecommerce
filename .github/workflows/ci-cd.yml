@@ -18,7 +18,16 @@ jobs:
       JWT_REFRESH_SECRET: "dummy_refresh"
       STRIPE_SECRET_KEY: "dummy_stripe"
       STRIPE_WEBHOOK_SECRET: "dummy_webhook"
-
+    services:
+      redis:
+        image: redis:alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name:  Kéo source code về máy chủ GitHub
         uses: actions/checkout@v3
