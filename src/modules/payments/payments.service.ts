@@ -5,6 +5,7 @@ import { PaymentStatus, PaymentMethod, OrderStatus } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { NotificationsService } from '../notifications/notifications.service';
 import Stripe from 'stripe';
+import { tryCatch } from 'bullmq';
 
 @Injectable()
 export class PaymentsService {
@@ -14,7 +15,7 @@ export class PaymentsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
-    private readonly notificationsService: NotificationsService
+    private readonly notificationsService: NotificationsService,
   ) {
     // 1. Lấy Key an toàn từ ConfigService
     const stripeSecret = this.configService.get<string>('STRIPE_SECRET_KEY');
@@ -92,17 +93,7 @@ export class PaymentsService {
 
   // XỬ LÝ WEBHOOK TỪ STRIPE
 async handleStripeWebhook(signature: string, payload: Buffer) {
-    let event: Stripe.Event;
-
-    // BỎ QUA XÁC THỰC CHỮ KÝ KHI CHẠY TEST E2E
-  if (process.env.NODE_ENV === 'test') {
-    try {
-      event = JSON.parse(payload.toString('utf8')) as Stripe.Event;
-    } catch (err: any) {
-      throw new BadRequestException(`Invalid JSON payload: ${err.message}`);
-    }
-  } else {
-    // Môi trường thật (Production / Development)
+    let event: Stripe.Event; 
     const webhookSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET');
     if (!webhookSecret) {
       throw new Error('Thiếu STRIPE_WEBHOOK_SECRET');
@@ -114,10 +105,9 @@ async handleStripeWebhook(signature: string, payload: Buffer) {
       this.logger.error(`⚠️ Xác thực Webhook thất bại: ${err.message}`);
       throw new BadRequestException(`Webhook Error: ${err.message}`);
     }
-  }
 
     const data = event?.data?.object as any;
-    const paymentId = data?.metadata?.paymentId; // Sử dụng paymentId
+    const paymentId = data?.metadata?.paymentId;
 
     if (!paymentId) {
       this.logger.warn('Bỏ qua Webhook: Không tìm thấy paymentId trong metadata');
@@ -126,12 +116,31 @@ async handleStripeWebhook(signature: string, payload: Buffer) {
 
     switch (event.type) {
       case 'payment_intent.succeeded':
-        this.logger.log(`💰 Thanh toán thành công cho Payment ID: ${paymentId}`);
+        const paymentIntent = event.data.object as any;
+        const stripeEventId = event.id;
+        let isPaymentJustCompleted = false;
+        let targetUserId: string | null = null;
         await this.prisma.$transaction(async (prisma) => {
-          const payment = await prisma.payment.update({
+          const payment = await prisma.payment.findUnique({
+            where: { id: paymentId },
+            include: { order: true }
+          })
+          if(!payment){
+            this.logger.error(`Không tìm thấy ${paymentId}`);
+            return;
+          }
+          if(payment.status !== 'PENDING'){
+            this.logger.error(`Payment ${payment.id} đã ở trạng thái ${payment.status}`);
+            return;
+          }
+          if(payment.amount !== paymentIntent.amount || paymentIntent.currency.toLowerCase() !== 'vnd'){
+            this.logger.error(`Só lượng hoặc đơn vị tiền tệ không khớp!!!`);
+            throw new Error('Só lượng hoặc đơn vị tiền tệ không khớp!!!');
+          }
+          await prisma.payment.update({
             where: { id: paymentId },
             data: {
-              status: 'SUCCESS', // Hoặc PaymentStatus.SUCCESS
+              status: 'SUCCESS', 
               transactionId: data.id,
             },
             include: { order: true }
@@ -139,14 +148,21 @@ async handleStripeWebhook(signature: string, payload: Buffer) {
 
           await prisma.order.update({ 
             where: { id: payment.orderId },
-            data: { status: 'PAID' } // Hoặc OrderStatus.PAID
+            data: { status: 'PAID' } 
           });
-
-          await this.notificationsService.pushNotificationToQueue(
-            payment.order.userId, 
-            `Đơn hàng ${payment.orderId} đã được thanh toán thành công qua Stripe!`
-          );
+          isPaymentJustCompleted = true;
+          targetUserId = payment.order.userId;
         });
+        if(isPaymentJustCompleted && targetUserId){
+          try {
+            await this.notificationsService.pushNotificationToQueue(
+              targetUserId, 
+              `Đơn hàng đã được thanh toán thành công qua Stripe!`
+            );
+          } catch (queueError){
+            this.logger.error(`Bỏ lỡ thông báo!! `);
+          }
+        }
         break;
 
       case 'payment_intent.payment_failed':

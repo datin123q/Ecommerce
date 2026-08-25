@@ -25,6 +25,7 @@ export class VouchersService {
       newVoucher.id,
       null,        
       newVoucher,   
+      this.prisma,
     );
     return newVoucher;
   }
@@ -80,7 +81,8 @@ export class VouchersService {
       'Voucher', 
       voucherId,
       oldVoucher,
-      newVoucher
+      newVoucher,
+      this.prisma,
     );
 
     return newVoucher;
@@ -110,7 +112,8 @@ export class VouchersService {
       'Voucher', 
       voucherId,
       oldVoucher,
-      newVoucher
+      newVoucher,
+      this.prisma,
     );
     return newVoucher;
   }

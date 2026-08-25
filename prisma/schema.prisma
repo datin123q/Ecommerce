@@ -103,7 +103,7 @@ model Product {
   id          String  @id @default(uuid())
   name        String
   description String?
-  price       Float
+  price       Int
 
   categoryId String
   category   Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
@@ -149,14 +149,14 @@ model Inventory {
   quantity Int    @default(0)
 
   warehouseId  String
-  warehouse    Warehouse              @relation(fields: [warehouseId], references: [id])
+  warehouse    Warehouse              @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
   variantId    String
   variant      ProductVariant         @relation(fields: [variantId], references: [id], onDelete: Cascade)
   transactions InventoryTransaction[]
 
   updatedAt DateTime @updatedAt
 
-  @@unique([warehouseId, variantId]) // 
+  @@unique([warehouseId, variantId])  
   @@map("Inventories")
 }
 
@@ -168,7 +168,7 @@ model InventoryTransaction {
   inventoryId String
   inventory   Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
   userId      String
-  user        User      @relation(fields: [userId], references: [id])
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -179,7 +179,7 @@ model InventoryTransaction {
 
 model Cart {
   id        String     @id @default(uuid())
-  userId    String
+  userId    String     @unique
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   cartItems CartItem[]
 
@@ -192,13 +192,15 @@ model CartItem {
   cartId    String
   cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
   variantId String
-  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, variantId])
 }
 
 model Order {
   id          String      @id @default(uuid())
   status      OrderStatus @default(PENDING) 
-  totalAmount Float
+  totalAmount Int
 
   userId String
   user   User   @relation(fields: [userId], references: [id])
@@ -216,17 +218,17 @@ model Order {
 model OrderItem {
   id       String @id @default(uuid())
   quantity Int
-  price    Float
+  price    Int
 
   variantId String
-  variant   ProductVariant @relation(fields: [variantId], references: [id])
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
   orderId   String
   order     Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
 model Payment {
   id     String @id @default(uuid())
-  amount Float
+  amount Int
   status PaymentStatus @default(PENDING) 
   method PaymentMethod @default(COD)
   transactionId String?
@@ -245,7 +247,7 @@ model Voucher {
   code  String @unique
   limit Int
   count Int    @default(0)
-  value Float
+  value Int
 
   usages VoucherUsage[]
 
@@ -256,13 +258,11 @@ model Voucher {
 
 model VoucherUsage {
   id String @id @default(uuid())
-
   voucherId String
   voucher   Voucher @relation(fields: [voucherId], references: [id])
   userId    String
   user      User    @relation(fields: [userId], references: [id])
   orderId   String
   order     Order   @relation(fields: [orderId], references: [id])
-
   createdAt DateTime @default(now())
 }

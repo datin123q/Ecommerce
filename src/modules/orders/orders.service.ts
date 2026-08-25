@@ -28,71 +28,59 @@ export class OrdersService {
       throw new BadRequestException('Giỏ hàng của bạn đang trống!');
     }
 
-    // // CHECK INVENTORY & CALCULATE PRICE
-    // let totalAmount = 0;
-    // const orderItemsData: any[] = [];
-    // const inventoryDeductions: any[] = [];
-
-    // for (const item of cart.cartItems) {
-    //   const availableInventory = await this.prisma.inventory.findFirst({
-    //     where: {
-    //       variantId: item.variantId,
-    //       quantity: { gte: item.quantity }, 
-    //     },
-    //   });
-
-    //   if (!availableInventory) {
-    //     throw new BadRequestException(
-    //       `Sản phẩm ${item.variant.name} không đủ tồn kho!`
-    //     );
-    //   }
-
-    //   inventoryDeductions.push({
-    //     inventoryId: availableInventory.id,
-    //     quantity: item.quantity,
-    //   });
-
-    //   const productPrice = item.variant.product.price;
-      
-    //   totalAmount += item.quantity * productPrice;
-      
-    //   orderItemsData.push({
-    //     variantId: item.variantId,
-    //     quantity: item.quantity,
-    //     price: productPrice,
-    //   });
-    // }
-
-    const variantIds = cart.cartItems.map(item => item.variantId);
+const variantIds = cart.cartItems.map(item => item.variantId);
+    
     const inventories = await this.prisma.inventory.findMany({
-      where: {variantId: {in: variantIds}}
+      where: { variantId: { in: variantIds } },
+      orderBy: { quantity: 'desc' },
     });
-    const inventoryMap = new Map(inventories.map(inv => [inv.variantId, inv]));
 
-    let totalAmount =0;
+    const stockMap = new Map<string, number>();
+    for (const inv of inventories) {
+      const currentTotal = stockMap.get(inv.variantId) || 0;
+      stockMap.set(inv.variantId, currentTotal + inv.quantity);
+    }
+
+    for (const item of cart.cartItems) {
+      const totalAvailable = stockMap.get(item.variantId) || 0;
+      if (totalAvailable < item.quantity) {
+        throw new BadRequestException(`Sản phẩm ${item.variant.name} không đủ tồn kho trên toàn hệ thống!`);
+      }
+    }
+
+    let totalAmount = 0;
     const orderItemsData: any[] = [];
     const inventoryDeductions: any[] = [];
 
-    for(const item of cart.cartItems){
-      const availableInventory = inventoryMap.get(item.variantId);
-      if(!availableInventory || availableInventory.quantity < item.quantity){
-        throw new BadRequestException(`Sản phẩm ${item.variant.name} không đủ tồn kho!`);
-      }
+    const mutableInventories = inventories.map(inv => ({ ...inv }));
 
-      inventoryDeductions.push({
-        inventoryId: availableInventory.id,
-        quantity: item.quantity,
-      });
+    for (const item of cart.cartItems) {
+      let remainingNeeded = item.quantity;
+      for (const inv of mutableInventories) {
+        if (inv.variantId === item.variantId && inv.quantity > 0) {
+          const takeFromThisWarehouse = Math.min(inv.quantity, remainingNeeded);
+
+          inventoryDeductions.push({
+            inventoryId: inv.id,          
+            quantity: takeFromThisWarehouse, 
+          });
+
+          inv.quantity -= takeFromThisWarehouse; 
+          remainingNeeded -= takeFromThisWarehouse;
+
+          if (remainingNeeded === 0) break; 
+        }
+      }
 
       const productPrice = item.variant.product.price;
-        totalAmount += item.quantity * productPrice;
-        
-        orderItemsData.push({
-          variantId: item.variantId,
-          quantity: item.quantity,
-          price: productPrice,
-        });
-      }
+      totalAmount += item.quantity * productPrice;
+
+      orderItemsData.push({
+        variantId: item.variantId,
+        quantity: item.quantity,
+        price: productPrice,
+      });
+    }
 
     //  VALIDATE VOUCHER
     let appliedVoucherId: string | null = null; 
@@ -128,24 +116,8 @@ export class OrdersService {
         include: { orderItems: true },
       });
 
-      // 4.2. Deduct Inventory & Create Inventory Transactions
-      // for (const deduction of inventoryDeductions) {
-      //   await prisma.inventory.update({
-      //     where: { id: deduction.inventoryId },
-      //     data: { quantity: { decrement: deduction.quantity } },
-      //   });
 
-      //   await prisma.inventoryTransaction.create({
-      //     data: {
-      //       type: TransactionType.OUT,
-      //       quantity: deduction.quantity,
-      //       inventoryId: deduction.inventoryId,
-      //       userId: userId,
-      //     },
-      //   });
-      // }
-      // Dùng Promise.all để chạy update song song. 
-    // Dùng updateMany để gài điều kiện gte (Chống race condition âm kho)
+    // Dùng updateMany để gài điều kiện gte 
     const updateInventoryPromises = inventoryDeductions.map(deduction => 
       prisma.inventory.updateMany({
         where: { 
@@ -177,14 +149,6 @@ export class OrdersService {
     await Promise.all(logPromises);
       // 4.4. Register Voucher Usage
       if (appliedVoucherId) {
-        // await prisma.voucherUsage.create({
-        //   data: { voucherId: appliedVoucherId, userId, orderId: newOrder.id },
-        // });
-
-        // await prisma.voucher.update({
-        //   where: { id: appliedVoucherId },
-        //   data: { count: { increment: 1 } },
-        // });
         const updateVoucher = await prisma.voucher.updateMany({
           where: { 
             id: appliedVoucherId,

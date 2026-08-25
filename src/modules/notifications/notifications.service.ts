@@ -42,7 +42,7 @@ export class NotificationsService {
   }
   async pushNotificationToQueue(userId: string, content: string) {
     await this.notificationQueue.add(
-      'create-notification-job', // Tên job chung chung hơn
+      'create-notification-job',
       { userId, content },
       { attempts: 3, removeOnComplete: true }
     );

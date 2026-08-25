@@ -32,7 +32,8 @@ export class ProductsService {
         'Product',
         newProduct.id,
         null,        
-        newProduct   
+        newProduct,
+        this.prisma,   
       );
       return newProduct;
     } catch (error) {
@@ -61,7 +62,8 @@ export class ProductsService {
       'Product',
       id,
       oldProduct,
-      newProduct
+      newProduct,
+      this.prisma,
     );
 
     return newProduct;
@@ -91,7 +93,8 @@ export class ProductsService {
         'Product',
         newVariant.id,
         null,        
-        newVariant   
+        newVariant ,
+        this.prisma,  
       );
       return newVariant;
     } catch (error: any) {
@@ -112,7 +115,7 @@ export class ProductsService {
       throw new NotFoundException(`Không tìm thấy biến thể với ID: ${variantId}`);
     }
 
-    // 2. Cập nhật dữ liệu mới (Chỉ lấy sku, name, variant)
+    // 2. Cập nhật dữ liệu mới 
     const newVariant = await this.prisma.productVariant.update({
       where: { id: variantId },
       data: {
@@ -129,7 +132,8 @@ export class ProductsService {
       'ProductVariant', 
       variantId,
       oldVariant,
-      newVariant
+      newVariant,
+      this.prisma,
     );
 
     return newVariant;
@@ -169,7 +173,8 @@ export class ProductsService {
       'Product',
       id,
       oldProduct,        
-      null,   
+      null,
+      this.prisma,   
     );
     return this.prisma.product.delete({
       where: { id },
@@ -184,7 +189,8 @@ export class ProductsService {
       'Product',
       id,
       oldVariant,        
-      null,   
+      null,
+      this.prisma,   
     );
     return this.prisma.productVariant.delete({
       where: {id},

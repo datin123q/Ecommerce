@@ -3,81 +3,87 @@ import {
   NestInterceptor, 
   ExecutionContext, 
   CallHandler, 
-  ConflictException, 
-  Inject 
+  ConflictException,
+  BadRequestException,
+  Inject,
 } from '@nestjs/common';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import type { Cache } from 'cache-manager';
-import { Observable, of, throwError } from 'rxjs';
-import { catchError, tap } from 'rxjs/operators';
+import { Observable } from 'rxjs';
+import { concatMap, catchError } from 'rxjs/operators';
+import * as argon2 from 'argon2';
 
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
   constructor(
-    // Inject Redis Cache Manager thay vì Prisma
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
     const request = context.switchToHttp().getRequest();
-    
-    // Đọc Key từ Header (Frontend sinh ra và gửi lên)
     const idempotencyKey = request.headers['x-idempotency-key'];
 
-    // Nếu API không yêu cầu Idempotency (không gửi key), cho qua bình thường
     if (!idempotencyKey) {
       return next.handle();
     }
 
-    // Tiền tố để tránh trùng lặp với các cache khác trong Redis
-    const cacheKey = `idempotency:${idempotencyKey}`;
+    const userId = request.user?.id; 
+    if (!userId) {
+      throw new BadRequestException('Yêu cầu đăng nhập');
+    }
 
-    // 1. KIỂM TRA TRẠNG THÁI TRONG REDIS (Tốc độ < 1ms)
-    const existingRecord: any = await this.cacheManager.get(cacheKey);
+    const cacheKey = `idempotency:${userId}:${idempotencyKey}`;
+    const payloadString = JSON.stringify(request.body || {});
+    const payloadHash = await argon2.hash(payloadString);
+    const requestMethod = request.method;
+    const requestPath = request.url;
 
-    if (existingRecord) {
+    const recordMetadata = {
+      status: 'PROCESSING',
+      payloadHash,
+      requestMethod,
+      requestPath,
+    };
+    const redisClient = (this.cacheManager.stores as any).client;
+    const isLocked = await redisClient.set(cacheKey, JSON.stringify(recordMetadata), {
+      NX: true,
+      PX: 86400000 
+    });
+
+    // KEY ĐÃ TỒN TẠI
+    if (!isLocked) {
+      const existingRaw = await this.cacheManager.get<string>(cacheKey)
+      const existingRecord = JSON.parse(existingRaw as string);
+      // Kiểm tra Fingerprint 
+      if (
+        existingRecord.payloadHash !== payloadHash ||
+        existingRecord.requestMethod !== requestMethod ||
+        existingRecord.requestPath !== requestPath
+      ) {
+        throw new BadRequestException('Idempotency key này đã được sử dụng cho một payload khác.');
+      }
+
       if (existingRecord.status === 'COMPLETED') {
-        // Giao dịch đã xong: Trả luôn kết quả cũ, chặn không cho chạy vào Service
-        return of(existingRecord.response);
+        return existingRecord.response;
       }
       
       if (existingRecord.status === 'PROCESSING') {
-        // Giao dịch đang chạy: Chặn đứng hành vi bấm đúp
         throw new ConflictException('Giao dịch đang được xử lý, xin vui lòng đợi!');
       }
     }
 
-    // ==========================================
-    // 2. NẾU LÀ REQUEST MỚI -> KHÓA LẠI (Lock)
-    // ==========================================
-    // Lưu trạng thái PROCESSING với thời gian sống (TTL) là 24 giờ (86,400,000 ms)
-    await this.cacheManager.set(cacheKey, { status: 'PROCESSING' }, 86400000);
-
-    // ==========================================
-    // 3. XỬ LÝ KẾT QUẢ TỪ CONTROLLER / SERVICE
-    // ==========================================
     return next.handle().pipe(
-      
-      // TRƯỜNG HỢP A: THÀNH CÔNG (Hàm tap sẽ chạy)
-      tap(async (response) => {
-        // Cập nhật trạng thái thành COMPLETED và nhét kết quả vào để lưu
-        await this.cacheManager.set(
-          cacheKey, 
-          { status: 'COMPLETED', response: response }, 
-          86400000 // Vẫn giữ TTL 24h, sau 24h Redis tự động xóa rác
-        );
+      concatMap(async (response) => {
+        const completedRecord = { ...recordMetadata, status: 'COMPLETED', response };
+        // lưu(bỏ nx)
+        await this.cacheManager.set(cacheKey, JSON.stringify(completedRecord), 86400000);
+        return response; 
       }),
-
-      // TRƯỜNG HỢP B: LỖI (Hàm catchError sẽ chạy)
+      
       catchError(async (error) => {
-        // RẤT QUAN TRỌNG: Nếu code lỗi (hết tiền, sập mạng...), phải XÓA KEY đi
-        // để khách hàng có thể bấm nút thử thanh toán lại.
         await this.cacheManager.del(cacheKey);
-        
-        // Ném lỗi đi tiếp để Global Exception Filter xử lý (hiện 400, 500)
         throw error;
       })
-      
     );
   }
 }

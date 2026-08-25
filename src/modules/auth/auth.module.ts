@@ -3,14 +3,22 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
 import { JwtModule } from '@nestjs/jwt';
-import { JwtStrategy } from './strategies/jwt.strategy'; // Import file vừa tạo
+import { JwtStrategy } from './strategies/jwt.strategy';
+import { ConfigModule, ConfigService } from '@nestjs/config'; // 1. Import Config
 
 @Module({
   imports: [
     UsersModule,
-    JwtModule.register({
-      secret: process.env.JWT_ACCESS_SECRET || 'access_secret',
-      signOptions: { expiresIn: (process.env.JWT_ACCESS_EXPIRES_IN || '150m') as any },
+    JwtModule.registerAsync({
+      global: true,
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => ({
+        secret: configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
+        signOptions: { 
+          expiresIn: (configService.get<string>('JWT_ACCESS_EXPIRES_IN') || '150m' ) as any
+        },
+      }),
     }),
   ],
   controllers: [AuthController],

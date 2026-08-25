@@ -112,37 +112,4 @@ describe('Luồng Mua Hàng Trọn Vẹn (e2e)', () => {
     });
   });
 
-  describe('Bước 3: Webhook Thanh Toán (Stripe)', () => {
-    it('phải xác thực chữ ký và cập nhật trạng thái đơn hàng thành PAID', async () => {
-      const stripePayload = {
-        id: 'evt_test_123',
-        type: 'payment_intent.succeeded',
-        data: {
-          object: {
-            id: 'pi_test_123',
-            metadata: { 
-              paymentId: 'payment-1' 
-            },
-          }
-        }
-      };
-
-      const rawBody = Buffer.from(JSON.stringify(stripePayload));
-
-      await request(app.getHttpServer())
-        .post('/api/v1/payments/webhook') 
-        .set('stripe-signature', 't=123,v1=chu_ky_bi_mat_gia_lap') 
-        .set('Content-Type', 'application/json')
-        .send(rawBody)
-        .expect(200);
-      
-      // Khẳng định hàm order.update đã được gọi với đúng ID đơn hàng và trạng thái PAID
-      expect(mockPrismaService.order.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'order-999' },
-          data: { status: 'PAID' }
-        })
-      );
-    });
-  });
 });

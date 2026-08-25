@@ -6,7 +6,6 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
 
-// Bắt buộc import type riêng biệt cho TypeScript Strict Mode
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
 
@@ -37,13 +36,6 @@ export class PaymentsController {
     if (!signature) {
       throw new BadRequestException('Thiếu chữ ký Stripe');
     }
-
-    // NẾU KHÔNG PHẢI MÔI TRƯỜNG TEST THÌ MỚI BẮT BUỘC CHECK RAW BODY
-    if (!req.rawBody && process.env.NODE_ENV !== 'test') {
-      throw new BadRequestException('Không tìm thấy Raw Body trong request.');
-    }
-
-    // Nếu đang test, dùng tạm req.body nếu req.rawBody trống
     const payload = req.rawBody || Buffer.from(JSON.stringify(req.body));
 
     return this.paymentsService.handleStripeWebhook(signature, payload);

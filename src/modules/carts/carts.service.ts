@@ -42,29 +42,31 @@ export class CartsService {
 
     const cart = await this.getMyCart(userId);
 
-    const existingCartItem = await this.prisma.cartItem.findFirst({
-      where: { cartId: cart.id, variantId },
-    });
-    await this.notificationsService.pushNotificationToQueue(
-      userId, 
-      `Thêm ${variant.name} x ${addToCartDto.quantity} vào giỏ hàng`
-    );
-    if (existingCartItem) {
-      //  Cộng dồn số lượng
-      return this.prisma.cartItem.update({
-        where: { id: existingCartItem.id },
-        data: { quantity: existingCartItem.quantity + quantity },
-      });
-    } else {
-      // Tạo dòng mới
-      return this.prisma.cartItem.create({
-        data: {
+    const cartItem = await this.prisma.cartItem.upsert({
+      where: {
+        cartId_variantId: {
           cartId: cart.id,
           variantId,
-          quantity,
         },
-      });
-    }
+      },
+      update: {
+        quantity: {
+          increment: quantity,
+        },
+      },
+      create: {
+        cartId: cart.id,
+        variantId,
+        quantity,
+      },
+    });
+
+    await this.notificationsService.pushNotificationToQueue(
+      userId, 
+      `Đã thêm ${variant.name} x ${quantity} vào giỏ hàng`
+    );
+
+    return cartItem;
   }
 
   // Xóa 1 mặt hàng khỏi giỏ

@@ -26,7 +26,9 @@ export class InventoryController {
   }
 
   @Get('warehouses')
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Xem danh sách kho hàng  (Chỉ WAREHOUSE_MANAGER)' })
   getWarehouses() {
     return this.inventoryService.getWarehouses();
@@ -40,8 +42,16 @@ export class InventoryController {
   update(@Param('id') id: string, @Body() updateWarehouseDto: UpdateWarehouseDto, @CurrentUser() user: any) {
     return this.inventoryService.update(id, updateWarehouseDto, user.id);
   }
+  @Get(':id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xem danh sách hàng một kho(Chỉ WAREHOUSE_MANAGER)' })
+   findOne(@Param('id') id: string) {
+    return this.inventoryService.findOne(id);
+  }
 
-  //  XÓA DANH MỤC
+  //  XÓA kho
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
@@ -57,6 +67,15 @@ export class InventoryController {
   @ApiOperation({ summary: 'Nhập hàng vào kho (Chỉ WAREHOUSE_MANAGER)' })
   stockIn(@CurrentUser() user: any, @Body() stockInDto: StockInDto) {
     return this.inventoryService.stockIn(user.id, stockInDto);
+  }
+
+  @Post('stock-out')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xuất hàng (Chỉ WAREHOUSE_MANAGER)' })
+  stockOut(@CurrentUser() user: any, @Body() stockInDto: StockInDto) {
+    return this.inventoryService.stockOut(user.id, stockInDto);
   }
 
   @Get('inventory')

@@ -28,7 +28,8 @@ export class CategoriesService {
       'Category',
       newCategory.id,
       null,
-      newCategory
+      newCategory,
+      this.prisma,
     );
     return newCategory;
 
@@ -65,7 +66,8 @@ export class CategoriesService {
       'Category',
       id,
       oldCategory,
-      newCategory
+      newCategory,
+      this.prisma,
     );
     return newCategory;
   }
@@ -78,7 +80,8 @@ export class CategoriesService {
       'Category',
       id,
       oldCategory,
-      null
+      null,
+      this.prisma,
     );
 
     return this.prisma.category.delete({

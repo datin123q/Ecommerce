@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards, Req , BadRequestException} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { LoginDto } from './dto/login.dto';
 //import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -33,5 +34,21 @@ export class AuthController {
       message: 'Lấy thông tin thành công',
       user: user,
     };
+  }
+  
+  @Post('refresh')
+  @ApiOperation({ summary: 'Cấp lại Access Token mới (Dùng Refresh Token)' })
+  async refresh(@Body() body: RefreshTokenDto) {
+    // Không cần if(!body.refreshToken) nữa vì class-validator đã tự kiểm tra!
+    return this.authService.refreshToken(body.refreshToken);
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard) 
+  @ApiBearerAuth() 
+  @ApiOperation({ summary: 'Đăng xuất tài khoản' })
+  async logout(@Req() request: any) {
+    const userId = request.user.id; 
+    return this.authService.logout(userId);
   }
 }
