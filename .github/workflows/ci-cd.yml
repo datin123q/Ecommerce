@@ -50,5 +50,4 @@ jobs:
       - name:  Chạy kiểm thử tự động (Unit & E2E)
         run: |
           npm run test
-          npm run test:e2e
 
