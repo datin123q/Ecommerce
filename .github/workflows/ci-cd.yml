@@ -3,9 +3,9 @@ name: Commerce Core CI/CD
 # Kích hoạt khi có code mới đẩy lên nhánh main
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "Main", "master" ]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: [ "Main", "master" ]
 
 jobs:
   # --- GIAI ĐOẠN 1: KIỂM TRA & BIÊN DỊCH ---
