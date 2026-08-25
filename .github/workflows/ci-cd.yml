@@ -11,47 +11,29 @@ jobs:
   # --- GIAI ĐOẠN 1: KIỂM TRA & BIÊN DỊCH ---
   build-and-test:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
     steps:
-      - name: ⬇️ Kéo source code về máy chủ GitHub
+      - name:  Kéo source code về máy chủ GitHub
         uses: actions/checkout@v3
 
-      - name: ⚙️ Cài đặt Node.js 20
+      - name:  Cài đặt Node.js 20
         uses: actions/setup-node@v3
         with:
           node-version: '20'
           cache: 'npm' # Giúp cài đặt nhanh hơn ở các lần sau
 
-      - name: 📦 Cài đặt thư viện (Chuẩn môi trường sạch)
+      - name:  Cài đặt thư viện (Chuẩn môi trường sạch)
         run: npm ci
 
-      - name: 🔍 Sinh code cho Prisma Client
+      - name:  Sinh code cho Prisma Client
         run: npx prisma generate
 
-      - name: 🛠️ Biên dịch dự án (Build)
+      - name:  Biên dịch dự án (Build)
         run: npm run build
 
-      - name: 🧪 Chạy kiểm thử tự động (Unit & E2E)
+      - name:  Chạy kiểm thử tự động (Unit & E2E)
         run: |
           npm run test
           npm run test:e2e
 
-  # --- GIAI ĐOẠN 2: DEPLOY LÊN SERVER ---
-  # (Giai đoạn này sẽ tạm thời bỏ qua nếu anh chưa setup VPS, 
-  # nhưng cứ để sẵn framework để dùng về sau)
-  deploy:
-    needs: build-and-test # Bắt buộc Test pass mới được Deploy
-    runs-on: ubuntu-latest
-    # Thêm if để chỉ deploy khi push lên nhánh main (không deploy lúc tạo Pull Request)
-    if: github.ref == 'refs/heads/main' 
-    steps:
-      - name: 🚀 Tự động Deploy lên VPS
-        uses: appleboy/ssh-action@master
-        # Phần này yêu cầu anh cấu hình Secrets trên GitHub sau
-        with:
-          host: ${{ secrets.SERVER_IP }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          script: |
-            cd /var/www/commerce-core
-            git pull origin main
-            docker-compose up -d --build
