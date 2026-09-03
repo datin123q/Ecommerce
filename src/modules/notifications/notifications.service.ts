@@ -54,7 +54,7 @@ export class NotificationsService {
     });
   }
 
-  @OnEvent('order.created')
+ @OnEvent('order.created')
   async handleOrderCreatedEvent(payload: any) {
     const { userId, content } = payload;
     return this.prisma.notification.create({

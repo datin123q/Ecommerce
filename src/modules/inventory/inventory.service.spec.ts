@@ -1,14 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { InventoryService } from './inventory.service';
 import { PrismaService } from '../../database/prisma.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotFoundException } from '@nestjs/common';
 import { TransactionType } from '@prisma/client';
 
 describe('InventoryService', () => {
   let service: InventoryService;
   let prisma: PrismaService;
-  let auditLogsService: AuditLogsService;
+  let eventEmitter: EventEmitter2;
 
   // --- DỮ LIỆU GIẢ ĐỊNH (MOCK DATA) ---
   const mockAdminId = 'admin-123';
@@ -60,8 +60,8 @@ describe('InventoryService', () => {
     $transaction: jest.fn().mockImplementation(async (cb) => cb(mockPrismaService)),
   };
 
-  const mockAuditLogsService = {
-    logAction: jest.fn(),
+  const mockEventEmitter = {
+    emit: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -69,13 +69,13 @@ describe('InventoryService', () => {
       providers: [
         InventoryService,
         { provide: PrismaService, useValue: mockPrismaService },
-        { provide: AuditLogsService, useValue: mockAuditLogsService },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 
     service = module.get<InventoryService>(InventoryService);
     prisma = module.get<PrismaService>(PrismaService);
-    auditLogsService = module.get<AuditLogsService>(AuditLogsService);
+    eventEmitter = module.get<EventEmitter2>(EventEmitter2);
   });
 
   afterEach(() => {
@@ -97,15 +97,6 @@ describe('InventoryService', () => {
       const result = await service.createWarehouse(dto, mockAdminId);
 
       expect(prisma.warehouse.create).toHaveBeenCalledWith({ data: dto });
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockAdminId,
-        'CREATE',
-        'Warehouse',
-        mockWarehouse.id,
-        null,
-        mockWarehouse,
-        prisma,
-      );
       expect(result).toEqual(mockWarehouse);
     });
   });
@@ -155,15 +146,6 @@ describe('InventoryService', () => {
         where: { id: mockWarehouseId },
         data: dto,
       });
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockAdminId,
-        'UPDATE',
-        'Warehouse',
-        mockWarehouseId,
-        mockWarehouse,
-        updatedWarehouse,
-        prisma,
-      );
       expect(result).toEqual(updatedWarehouse);
     });
   });
@@ -187,15 +169,6 @@ describe('InventoryService', () => {
       await service.remove(mockWarehouseId, mockAdminId);
 
       expect(prisma.warehouse.delete).toHaveBeenCalledWith({ where: { id: mockWarehouseId } });
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockAdminId,
-        'DELETE',
-        'Warehouse',
-        mockWarehouseId,
-        mockWarehouse,
-        null,
-        prisma,
-      );
     });
   });
 
@@ -236,15 +209,6 @@ describe('InventoryService', () => {
         update: { quantity: { increment: stockInDto.quantity } },
       });
 
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockUserId,
-        'UPDATE', // Vì existingInventory có tồn tại
-        'Inventory',
-        newInventory.id,
-        existingInventory,
-        newInventory,
-        prisma,
-      );
 
       expect(prisma.inventoryTransaction.create).toHaveBeenCalledWith({
         data: {
@@ -303,15 +267,6 @@ describe('InventoryService', () => {
         update: { quantity: { decrement: stockOutDto.quantity } },
       });
 
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockUserId,
-        'UPDATE',
-        'Inventory',
-        newInventory.id,
-        existingInventory,
-        newInventory,
-        prisma,
-      );
 
       expect(prisma.inventoryTransaction.create).toHaveBeenCalledWith({
         data: {

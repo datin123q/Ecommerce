@@ -39,36 +39,8 @@ export class AuditLogsService {
       },
     });
   }
-  @OnEvent('voucher.created')
-  async handleVoucherCreatedEvent(payload: any) {
-    const { userId, action, entity, entityId,oldValues, newValues, tx } = payload;
-    return tx.auditLog.create({
-      data: { 
-        userId,
-        action,
-        entity,
-        entityId,
-        oldValues,
-        newValues,
-      },
-    });
-  }
-  @OnEvent('voucher.update')
-  async handleVoucherUpdateEvent(payload: any) {
-    const { userId, action, entity, entityId,oldValues, newValues, tx } = payload;
-    return tx.auditLog.create({
-      data: { 
-        userId,
-        action,
-        entity,
-        entityId,
-        oldValues,
-        newValues,
-      },
-    });
-  }
-    @OnEvent('voucher.delete')
-  async handleVoucherDeleteEvent(payload: any) {
+  @OnEvent(['voucher.*', 'category.*', 'product.*', 'variant.*', 'warehouse.*', 'inventory.*'])
+  async handleEvent(payload: any) {
     const { userId, action, entity, entityId,oldValues, newValues, tx } = payload;
     return tx.auditLog.create({
       data: { 

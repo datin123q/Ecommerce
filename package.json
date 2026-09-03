@@ -48,6 +48,7 @@
     "rxjs": "^7.8.1",
     "stripe": "^22.5.0",
     "swagger-ui-express": "^5.0.1",
+    "uuid": "^14.0.2",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0"
   },
@@ -64,6 +65,7 @@
     "@types/passport-jwt": "^4.0.1",
     "@types/pg": "^8.21.0",
     "@types/supertest": "^7.0.0",
+    "@types/uuid": "^11.0.0",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",

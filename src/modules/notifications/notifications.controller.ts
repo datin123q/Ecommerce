@@ -7,7 +7,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Notifications (Thông báo)')
 @Controller('notifications')
-@UseGuards(JwtAuthGuard) // Bắt buộc đăng nhập
+@UseGuards(JwtAuthGuard) 
 @ApiBearerAuth()
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}

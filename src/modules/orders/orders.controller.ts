@@ -1,8 +1,7 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Param, Patch } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -12,7 +11,6 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @ApiBearerAuth()
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
-
   @Post('checkout')
   @ApiOperation({ summary: 'Chốt đơn từ Giỏ hàng (Có thể kèm Voucher)' })
   createOrder(@CurrentUser() user: any, @Body() createOrderDto: CreateOrderDto) {
@@ -24,4 +22,12 @@ export class OrdersController {
   getMyOrders(@CurrentUser() user: any) {
     return this.ordersService.getMyOrders(user.id);
   }
+
+  @Patch(':id/cancel')
+  async cancelOrder(
+    @Param('id') orderId: string, @CurrentUser() user: any
+  ) {
+    return this.ordersService.cancelOrder(user.id, orderId);
+  }
+
 }

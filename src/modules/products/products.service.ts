@@ -2,13 +2,13 @@ import { Injectable, NotFoundException, ConflictException } from '@nestjs/common
 import { PrismaService } from '../../database/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
-import { UpdateProductVariantDto } from './dto/update-productVariant.dto';
+import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
 import { CreateProductVariantDto } from './dto/create-product.dto';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService, private readonly auditLogsService: AuditLogsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly eventEmitter: EventEmitter2) {}
   //tạo products
   async create(createProductDto: CreateProductDto, adminId: string) {
     const { variants, ...productData } = createProductDto;
@@ -26,15 +26,15 @@ export class ProductsService {
           variants: true, 
         },
       });
-      await this.auditLogsService.logAction(
-        adminId,
-        'CREATE',
-        'Product',
-        newProduct.id,
-        null,        
-        newProduct,
-        this.prisma,   
-      );
+      this.eventEmitter.emit('product.created', {
+        id: adminId,
+        action: 'CREATE',
+        entity: 'Product',
+        entityId: newProduct.id,
+        oldValue: null,        
+        newValue: newProduct,   
+        tx: this.prisma
+      });
       return newProduct;
     } catch (error) {
       if (error.code === 'P2002') {
@@ -56,15 +56,15 @@ export class ProductsService {
       }
     });
 
-    await this.auditLogsService.logAction(
-      adminId,
-      'UPDATE',
-      'Product',
-      id,
-      oldProduct,
-      newProduct,
-      this.prisma,
-    );
+    this.eventEmitter.emit('product.update', {
+      id: adminId,
+      action: 'UPDATE',
+      entity: 'Product',
+      entityId: id,
+      oldValue: oldProduct,        
+      newValue: newProduct,   
+      tx: this.prisma
+    });
 
     return newProduct;
   }
@@ -87,15 +87,15 @@ export class ProductsService {
           productId: productId, 
         },
       });
-      await this.auditLogsService.logAction(
-        adminId,
-        'CREATE',
-        'Product',
-        newVariant.id,
-        null,        
-        newVariant ,
-        this.prisma,  
-      );
+      this.eventEmitter.emit('variant.created', {
+        id: adminId,
+        action: 'CREATE',
+        entity: 'ProductVariant',
+        entityId: newVariant.id,
+        oldValue: null,        
+        newValue: newVariant,   
+        tx: this.prisma
+      });
       return newVariant;
     } catch (error: any) {
       if (error.code === 'P2002') {
@@ -126,16 +126,15 @@ export class ProductsService {
     });
 
     // 3. Ghi lại Audit Log
-    await this.auditLogsService.logAction(
-      adminId,
-      'UPDATE',
-      'ProductVariant', 
-      variantId,
-      oldVariant,
-      newVariant,
-      this.prisma,
-    );
-
+    this.eventEmitter.emit('variant.update', {
+      id: adminId,
+      action: 'UPDATE',
+      entity: 'ProductVariant',
+      entityId: variantId,
+      oldValue: oldVariant,        
+      newValue: newVariant,   
+      tx: this.prisma
+    });
     return newVariant;
   }
 
@@ -167,15 +166,15 @@ export class ProductsService {
 
   async remove(id: string, adminId: string) {
     const oldProduct = await this.findOne(id); 
-    await this.auditLogsService.logAction(
-      adminId,
-      'DELETE',
-      'Product',
-      id,
-      oldProduct,        
-      null,
-      this.prisma,   
-    );
+    this.eventEmitter.emit('variant.created', {
+      id: adminId,
+      action: 'DELETE',
+      entity: 'Product',
+      entityId: id,
+      oldValue: oldProduct,        
+      newValue: null,   
+      tx: this.prisma
+    });
     return this.prisma.product.delete({
       where: { id },
     });
@@ -183,15 +182,15 @@ export class ProductsService {
 
   async removeVariant(id: string, adminId: string) {
     const oldVariant = await this.findOneVariant(id);
-    await this.auditLogsService.logAction(
-      adminId,
-      'DELETE',
-      'Product',
-      id,
-      oldVariant,        
-      null,
-      this.prisma,   
-    );
+    this.eventEmitter.emit('variant.created', {
+      id: adminId,
+      action: 'DELETE',
+      entity: 'ProductVariant',
+      entityId: id,
+      oldValue: oldVariant,        
+      newValue: null,   
+      tx: this.prisma
+    });
     return this.prisma.productVariant.delete({
       where: {id},
     })

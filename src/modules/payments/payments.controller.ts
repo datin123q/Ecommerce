@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
+import { ApiHeader } from '@nestjs/swagger';
 
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
@@ -18,6 +19,11 @@ export class PaymentsController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Tạo phiên thanh toán (Stripe / COD)' })
+  @ApiHeader({
+    name: 'x-idempotency-key',
+    description: 'Mã định danh duy nhất để chống trùng lặp giao dịch (VD: uuid)',
+    required: true, // Đặt true để Swagger bắt buộc phải nhập mới cho bấm Send
+  })
   @UseInterceptors(IdempotencyInterceptor)
   async createIntent(
     @CurrentUser() user: any,

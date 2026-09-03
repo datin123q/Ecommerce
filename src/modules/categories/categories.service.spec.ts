@@ -1,17 +1,17 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CategoriesService } from './categories.service';
 import { PrismaService } from '../../database/prisma.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 
 describe('CategoriesService', () => {
   let service: CategoriesService;
   let prisma: PrismaService;
-  let auditLogsService: AuditLogsService;
 
   // --- DỮ LIỆU GIẢ ĐỊNH (MOCK DATA) ---
   const mockAdminId = 'admin-123';
   const mockCategoryId = 'category-123';
+    let eventEmitter: EventEmitter2;
 
   const mockCategory = {
     id: mockCategoryId,
@@ -39,8 +39,8 @@ describe('CategoriesService', () => {
     },
   };
 
-  const mockAuditLogsService = {
-    logAction: jest.fn(),
+  const mockEventEmitter = {
+    emit: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -48,13 +48,13 @@ describe('CategoriesService', () => {
       providers: [
         CategoriesService,
         { provide: PrismaService, useValue: mockPrismaService },
-        { provide: AuditLogsService, useValue: mockAuditLogsService },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 
     service = module.get<CategoriesService>(CategoriesService);
     prisma = module.get<PrismaService>(PrismaService);
-    auditLogsService = module.get<AuditLogsService>(AuditLogsService);
+    eventEmitter = module.get<EventEmitter2>(EventEmitter2);
   });
 
   afterEach(() => {
@@ -92,16 +92,15 @@ describe('CategoriesService', () => {
         data: createCategoryDto,
       });
 
-      // Kiểm tra xem audit log có được gọi chính xác không
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockAdminId,
-        'CREATE',
-        'Category',
-        mockCategory.id,
-        null,
-        mockCategory,
-        prisma, 
-      );
+      expect(eventEmitter.emit).toHaveBeenCalledWith('category.created',{
+        id: mockAdminId,
+        action: 'CREATE',
+        entity: 'Category',
+        entityId: mockCategory.id,
+        oldValue: null,
+        newValue: mockCategory,
+        tx: prisma, 
+      });
 
       expect(result).toEqual(mockCategory);
     });
@@ -182,15 +181,15 @@ describe('CategoriesService', () => {
         data: updateCategoryDto,
       });
 
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockAdminId,
-        'UPDATE',
-        'Category',
-        mockCategoryId,
-        mockCategory,
-        updatedCategory, 
-        prisma,
-      );
+      expect(eventEmitter.emit).toHaveBeenCalledWith('category.update',{
+        id: mockAdminId,
+        action: 'UPDATE',
+        entity: 'Category',
+        entityId: mockCategoryId,
+        oldValue: mockCategory,
+        newValue: updatedCategory,
+        tx: prisma, 
+      });
 
       expect(result).toEqual(updatedCategory);
     });
@@ -215,16 +214,15 @@ describe('CategoriesService', () => {
 
       const result = await service.remove(mockCategoryId, mockAdminId);
 
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockAdminId,
-        'DELETE',
-        'Category',
-        mockCategoryId,
-        mockCategory, 
-        null, 
-        prisma,
-      );
-
+      expect(eventEmitter.emit).toHaveBeenCalledWith('category.delete',{
+        id: mockAdminId,
+        action: 'DELETE',
+        entity: 'Category',
+        entityId: mockCategoryId,
+        oldValue: mockCategory,
+        newValue: null,
+        tx: prisma, 
+      });
       expect(prisma.category.delete).toHaveBeenCalledWith({
         where: { id: mockCategoryId },
       });

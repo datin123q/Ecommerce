@@ -5,24 +5,24 @@ import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { StockInDto } from './dto/stock-in.dto';
 import { StockOutDto } from './dto/stock-out.dto';
 import { TransactionType } from '@prisma/client';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService, private readonly auditLogsService: AuditLogsService) {}
+  constructor(private readonly prisma: PrismaService, private readonly eventEmitter: EventEmitter2) {}
 
   // --- NGHIỆP VỤ KHO HÀNG (WAREHOUSE) ---
   async createWarehouse(createWarehouseDto: CreateWarehouseDto, adminId: string) {
     const newWarehouse = await this.prisma.warehouse.create({ data: createWarehouseDto });
-    await this.auditLogsService.logAction(
-      adminId,
-      'CREATE',
-      'Warehouse',
-      newWarehouse.id,
-      null,
-      newWarehouse,
-      this.prisma,
-    );
+    this.eventEmitter.emit('warehouse.created', {
+      id: adminId,
+      action: 'CREATE',
+      entity: 'Warehouse',
+      entityId: newWarehouse.id,
+      oldValue: null,        
+      newValue: newWarehouse,   
+      tx: this.prisma
+    });
     return newWarehouse;
   }
   
@@ -41,15 +41,15 @@ export class InventoryService {
       where: { id },
       data: updateWarehouseDto,
     });
-    await this.auditLogsService.logAction(
-      adminId,
-      'UPDATE',
-      'Warehouse',
-      id,
-      oldWarehouse,
-      newWarehouse,
-      this.prisma,
-    );
+    this.eventEmitter.emit('warehouse.update', {
+      id: adminId,
+      action: 'UPDATE',
+      entity: 'Warehouse',
+      entityId: id,
+      oldValue: oldWarehouse,        
+      newValue: newWarehouse,   
+      tx: this.prisma
+    });
     return newWarehouse;
 
   }
@@ -80,15 +80,15 @@ export class InventoryService {
     await this.prisma.warehouse.delete({
       where: {id}
     })
-    await this.auditLogsService.logAction(
-      adminId,
-      'DELETE',
-      'Warehouse',
-      id,
-      oldWarehouse,
-      null,
-      this.prisma
-    );
+    this.eventEmitter.emit('warehouse.delete', {
+      id: adminId,
+      action: 'CREATE',
+      entity: 'Warehouse',
+      entityId: id,
+      oldValue: oldWarehouse,        
+      newValue: null,   
+      tx: this.prisma
+    });
   }
   // --- NGHIỆP VỤ NHẬP KHO (STOCK IN) ---
   async stockIn(userId: string, stockInDto: StockInDto) {
@@ -116,15 +116,15 @@ export class InventoryService {
         create: { warehouseId, variantId, quantity },
         update: { quantity: { increment: quantity } }, // Cộng thêm số lượng
       });
-      await this.auditLogsService.logAction(
-        userId,
-        oldInventory?'UPDATE' : 'CREATE',
-        'Inventory',
-        newInventory.id,
-        oldInventory,
-        newInventory,
-        prisma,
-      );
+      this.eventEmitter.emit('inventory.stockIn', {
+        id: userId,
+        action: oldInventory?'UPDATE' : 'CREATE',
+        entity: 'Inventory',
+        entityId: newInventory.id,
+        oldValue: oldInventory,        
+        newValue: newInventory,   
+        tx: prisma
+      });
 
       //  Lưu vào sổ nhật ký kho (Transaction History)
       const transaction = await prisma.inventoryTransaction.create({
@@ -166,15 +166,15 @@ export class InventoryService {
         create: { warehouseId, variantId, quantity },
         update: { quantity: { decrement: quantity } }, // giảm số lượng
       });
-      await this.auditLogsService.logAction(
-        userId,
-        oldInventory?'UPDATE' : 'CREATE',
-        'Inventory',
-        newInventory.id,
-        oldInventory,
-        newInventory,
-        prisma,
-      );
+      this.eventEmitter.emit('inventory.stockOut', {
+        id: userId,
+        action: oldInventory?'UPDATE' : 'CREATE',
+        entity: 'Inventory',
+        entityId: newInventory.id,
+        oldValue: oldInventory,        
+        newValue: newInventory,   
+        tx: prisma
+      });
 
       //  Lưu vào sổ nhật ký kho (Transaction History)
       const transaction = await prisma.inventoryTransaction.create({

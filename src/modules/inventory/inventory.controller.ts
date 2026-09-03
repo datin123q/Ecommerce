@@ -1,8 +1,9 @@
-import { Controller, Post, Body, UseGuards, Get, Patch, Param ,Delete} from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Patch, Param, Delete } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { StockInDto } from './dto/stock-in.dto';
+import { StockOutDto } from './dto/stock-out.dto'; // Thêm import này
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -13,76 +14,61 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @ApiTags('Inventory (Kho hàng)')
 @Controller('inventory')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN) // Đưa lên cấp Controller cho gọn
+@ApiBearerAuth()
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
+  // --- QUẢN LÝ KHO (WAREHOUSE) ---
+
   @Post('warehouses')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Tạo kho hàng mới (Chỉ WAREHOUSE_MANAGER)' })
+  @ApiOperation({ summary: 'Tạo kho hàng mới (Chỉ WAREHOUSE_MANAGER/ADMIN)' })
   createWarehouse(@Body() createWarehouseDto: CreateWarehouseDto, @CurrentUser() user: any) {
     return this.inventoryService.createWarehouse(createWarehouseDto, user.id);
   }
 
   @Get('warehouses')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xem danh sách kho hàng  (Chỉ WAREHOUSE_MANAGER)' })
+  @ApiOperation({ summary: 'Xem danh sách kho hàng' })
   getWarehouses() {
     return this.inventoryService.getWarehouses();
   }
 
-  @Patch(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Cập nhật thông tin kho  (Chỉ WAREHOUSE_MANAGER)' })
-  update(@Param('id') id: string, @Body() updateWarehouseDto: UpdateWarehouseDto, @CurrentUser() user: any) {
-    return this.inventoryService.update(id, updateWarehouseDto, user.id);
-  }
-  @Get(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xem danh sách hàng một kho(Chỉ WAREHOUSE_MANAGER)' })
-   findOne(@Param('id') id: string) {
+  @Get('warehouses/:id')
+  @ApiOperation({ summary: 'Xem chi tiết một kho và danh sách hàng' })
+  findOne(@Param('id') id: string) {
     return this.inventoryService.findOne(id);
   }
 
-  //  XÓA kho
-  @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xóa kho  (Chỉ WAREHOUSE_MANAGER)' })
+  @Patch('warehouses/:id')
+  @ApiOperation({ summary: 'Cập nhật thông tin kho' })
+  update(@Param('id') id: string, @Body() updateWarehouseDto: UpdateWarehouseDto, @CurrentUser() user: any) {
+    return this.inventoryService.update(id, updateWarehouseDto, user.id);
+  }
+
+  @Delete('warehouses/:id')
+  @ApiOperation({ summary: 'Xóa kho' })
   remove(@Param('id') id: string, @CurrentUser() user: any) {
     return this.inventoryService.remove(id, user.id);
   }
+
+  // --- NGHIỆP VỤ XUẤT NHẬP TỒN ---
+
   @Post('stock-in')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Nhập hàng vào kho (Chỉ WAREHOUSE_MANAGER)' })
+  @ApiOperation({ summary: 'Nhập hàng vào kho' })
   stockIn(@CurrentUser() user: any, @Body() stockInDto: StockInDto) {
     return this.inventoryService.stockIn(user.id, stockInDto);
   }
 
   @Post('stock-out')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xuất hàng (Chỉ WAREHOUSE_MANAGER)' })
-  stockOut(@CurrentUser() user: any, @Body() stockInDto: StockInDto) {
-    return this.inventoryService.stockOut(user.id, stockInDto);
+  @ApiOperation({ summary: 'Xuất hàng khỏi kho' })
+  // SỬA LỖI: Đổi StockInDto thành StockOutDto
+  stockOut(@CurrentUser() user: any, @Body() stockOutDto: StockOutDto) {
+    return this.inventoryService.stockOut(user.id, stockOutDto);
   }
 
-  @Get('inventory')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xem danh sách hàng mỗi kho(Chỉ WAREHOUSE_MANAGER)' })
+  @Get('stocks')
+  @ApiOperation({ summary: 'Xem danh sách tồn kho tổng hợp' })
   getInventories() {
     return this.inventoryService.getInventory();
   }

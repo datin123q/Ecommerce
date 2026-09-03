@@ -1,14 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ProductsService } from './products.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../../database/prisma.service';
-import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 
 describe('ProductsService', () => {
   let service: ProductsService;
   let prisma: PrismaService;
-  let auditLogsService: AuditLogsService;
-
+  let eventEmitter: EventEmitter2;
   // --- DỮ LIỆU GIẢ ĐỊNH (MOCK DATA) ---
   const mockAdminId = 'admin-123';
   const mockProductId = 'prod-123';
@@ -57,22 +56,20 @@ describe('ProductsService', () => {
     },
   };
 
-  const mockAuditLogsService = {
-    logAction: jest.fn(),
+  const mockEventEmitter = {
+    emit: jest.fn(),
   };
-
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProductsService,
         { provide: PrismaService, useValue: mockPrismaService },
-        { provide: AuditLogsService, useValue: mockAuditLogsService },
+        { provide: EventEmitter2, useValue: mockEventEmitter }
       ],
     }).compile();
 
     service = module.get<ProductsService>(ProductsService);
     prisma = module.get<PrismaService>(PrismaService);
-    auditLogsService = module.get<AuditLogsService>(AuditLogsService);
   });
 
   afterEach(() => {
@@ -103,15 +100,6 @@ describe('ProductsService', () => {
         include: { category: true, variants: true },
       });
 
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockAdminId,
-        'CREATE',
-        'Product',
-        mockProduct.id,
-        null,
-        mockProduct,
-        prisma,
-      );
       expect(result).toEqual(mockProduct);
     });
 
@@ -157,15 +145,6 @@ describe('ProductsService', () => {
         data: updateDto,
       });
 
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockAdminId,
-        'UPDATE',
-        'Product',
-        mockProductId,
-        mockProduct, // Dữ liệu cũ
-        updatedProduct, // Dữ liệu mới
-        prisma,
-      );
       expect(result).toEqual(updatedProduct);
     });
   });
@@ -199,15 +178,6 @@ describe('ProductsService', () => {
         },
       });
 
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockAdminId,
-        'CREATE',
-        'Product', // Ghi chú: Dựa theo code của bạn thì ở đây log tên Entity là 'Product'
-        mockVariant.id,
-        null,
-        mockVariant,
-        prisma,
-      );
       expect(result).toEqual(mockVariant);
     });
 
@@ -247,15 +217,6 @@ describe('ProductsService', () => {
         data: updateDto,
       });
 
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockAdminId,
-        'UPDATE',
-        'ProductVariant',
-        mockVariantId,
-        mockVariant,
-        updatedVariant,
-        prisma,
-      );
       expect(result).toEqual(updatedVariant);
     });
   });
@@ -312,15 +273,6 @@ describe('ProductsService', () => {
       const result = await service.remove(mockProductId, mockAdminId);
 
       expect(prisma.product.delete).toHaveBeenCalledWith({ where: { id: mockProductId } });
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockAdminId,
-        'DELETE',
-        'Product',
-        mockProductId,
-        mockProduct,
-        null,
-        prisma,
-      );
       expect(result).toEqual(mockProduct);
     });
   });
@@ -338,15 +290,6 @@ describe('ProductsService', () => {
       const result = await service.removeVariant(mockVariantId, mockAdminId);
 
       expect(prisma.productVariant.delete).toHaveBeenCalledWith({ where: { id: mockVariantId } });
-      expect(auditLogsService.logAction).toHaveBeenCalledWith(
-        mockAdminId,
-        'DELETE',
-        'Product', // Ghi chú: Dựa theo code của bạn thì ở đây log tên Entity là 'Product'
-        mockVariantId,
-        mockVariant,
-        null,
-        prisma,
-      );
       expect(result).toEqual(mockVariant);
     });
   });

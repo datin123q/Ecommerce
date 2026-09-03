@@ -7,16 +7,15 @@ import {
   BadRequestException,
   Inject,
 } from '@nestjs/common';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import type { Cache } from 'cache-manager';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs';
 import { concatMap, catchError } from 'rxjs/operators';
-import * as argon2 from 'argon2';
+import * as crypto from 'crypto';
+import Redis from 'ioredis';
 
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
   constructor(
-    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache
+    @Inject('REDIS_CLIENT') private readonly redisClient: Redis
   ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
@@ -34,7 +33,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     const cacheKey = `idempotency:${userId}:${idempotencyKey}`;
     const payloadString = JSON.stringify(request.body || {});
-    const payloadHash = await argon2.hash(payloadString);
+    const payloadHash = crypto.createHash('sha256').update(payloadString).digest('hex');
     const requestMethod = request.method;
     const requestPath = request.url;
 
@@ -44,17 +43,25 @@ export class IdempotencyInterceptor implements NestInterceptor {
       requestMethod,
       requestPath,
     };
-    const redisClient = (this.cacheManager.stores as any).client;
-    const isLocked = await redisClient.set(cacheKey, JSON.stringify(recordMetadata), {
-      NX: true,
-      PX: 86400000 
-    });
+    const lockResult = await this.redisClient.set(
+      cacheKey, 
+      JSON.stringify(recordMetadata), 
+      'PX', 
+      86400000, // 24 giờ
+      'NX'
+    );
 
-    // KEY ĐÃ TỒN TẠI
-    if (!isLocked) {
-      const existingRaw = await this.cacheManager.get<string>(cacheKey)
-      const existingRecord = JSON.parse(existingRaw as string);
-      // Kiểm tra Fingerprint 
+    const isKeyNewlyCreated = lockResult === 'OK';
+
+    if (!isKeyNewlyCreated) {
+      const existingRaw = await this.redisClient.get(cacheKey);
+      
+      if (!existingRaw) {
+        throw new ConflictException('Giao dịch đang được xử lý, vui lòng thử lại.');
+      }
+
+      const existingRecord = JSON.parse(existingRaw);
+
       if (
         existingRecord.payloadHash !== payloadHash ||
         existingRecord.requestMethod !== requestMethod ||
@@ -64,24 +71,29 @@ export class IdempotencyInterceptor implements NestInterceptor {
       }
 
       if (existingRecord.status === 'COMPLETED') {
-        return existingRecord.response;
+        return of(existingRecord.response);
       }
       
       if (existingRecord.status === 'PROCESSING') {
         throw new ConflictException('Giao dịch đang được xử lý, xin vui lòng đợi!');
       }
     }
-
     return next.handle().pipe(
       concatMap(async (response) => {
         const completedRecord = { ...recordMetadata, status: 'COMPLETED', response };
-        // lưu(bỏ nx)
-        await this.cacheManager.set(cacheKey, JSON.stringify(completedRecord), 86400000);
+      
+        await this.redisClient.set(
+          cacheKey, 
+          JSON.stringify(completedRecord), 
+          'PX', 
+          86400000
+        ); 
+        
         return response; 
       }),
       
       catchError(async (error) => {
-        await this.cacheManager.del(cacheKey);
+        await this.redisClient.del(cacheKey);
         throw error;
       })
     );

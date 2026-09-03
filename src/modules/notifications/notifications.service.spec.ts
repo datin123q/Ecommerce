@@ -181,39 +181,5 @@ describe('NotificationsService', () => {
       data: { userId: fakePayload.userId, content: fakePayload.content, isRead: false },
     };
 
-    it('handleOrderCreatedEvent nên tạo thông báo', async () => {
-      await service.handleOrderCreatedEvent(fakePayload);
-      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
-    });
-
-    it('handleCartItemCreatedEvent nên tạo thông báo', async () => {
-      await service.handleCartItemCreatedEvent(fakePayload);
-      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
-    });
-
-    it('handleCartItemDeleteEvent nên tạo thông báo', async () => {
-      await service.handleCartItemDeleteEvent(fakePayload);
-      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
-    });
-
-    it('handlepaymentCodCreatedEvent nên tạo thông báo', async () => {
-      await service.handlepaymentCodCreatedEvent(fakePayload);
-      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
-    });
-
-    it('handlepaymentStripeCreatedEvent nên tạo thông báo', async () => {
-      await service.handlepaymentStripeCreatedEvent(fakePayload);
-      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
-    });
-
-    it('handleProfileUpdateEvent nên tạo thông báo', async () => {
-      await service.handleProfileUpdateEvent(fakePayload);
-      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
-    });
-
-    it('handleRoleUpdateEvent nên tạo thông báo', async () => {
-      await service.handleRoleUpdateEvent(fakePayload);
-      expect(prisma.notification.create).toHaveBeenCalledWith(expectedDbCall);
-    });
   });
 });

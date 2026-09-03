@@ -1,33 +1,18 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable,Inject, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
-import { PaymentStatus, PaymentMethod, OrderStatus } from '@prisma/client';
-import { ConfigService } from '@nestjs/config';
-import Stripe from 'stripe';
-import { tryCatch } from 'bullmq';
+import { PaymentStatus, PaymentMethod, OrderStatus} from '@prisma/client';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-
+import { StateTransition } from '../orders/domain/state-transition';
+import { PAYMENT_PROVIDER, type IPaymentProvider } from './adapters/payment-provider.interface';
 @Injectable()
 export class PaymentsService {
   private readonly logger = new Logger(PaymentsService.name);
-  private stripe: Stripe;
-
+  @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: IPaymentProvider;
   constructor(
     private readonly prisma: PrismaService,
-    private readonly configService: ConfigService,
     private readonly eventEmitter: EventEmitter2,
-  ) {
-    // 1. Lấy Key an toàn từ ConfigService
-    const stripeSecret = this.configService.get<string>('STRIPE_SECRET_KEY');
-    if (!stripeSecret) {
-      throw new Error('THIẾU BIẾN MÔI TRƯỜNG: STRIPE_SECRET_KEY chưa được cấu hình!');
-    }
-
-    // 2. Khởi tạo Stripe
-    this.stripe = new Stripe(stripeSecret, {
-      apiVersion: '2026-07-29.dahlia', 
-    });
-  }
+  ) {}
 
   // ==========================================================
   // TẠO PHIÊN THANH TOÁN
@@ -38,6 +23,7 @@ export class PaymentsService {
     });
 
     if (!order) throw new NotFoundException('Không tìm thấy đơn hàng');
+    StateTransition.validateTransition(order.status, OrderStatus.PAID || OrderStatus.AWAITING_DELIVERY);
 
     const payment = await this.prisma.payment.upsert({
       where: { orderId: order.id },
@@ -54,6 +40,7 @@ export class PaymentsService {
     //  COD
     if (dto.method === PaymentMethod.COD) {
       await this.prisma.$transaction(async (prisma) => {
+        StateTransition.validateTransition(order.status, OrderStatus.AWAITING_DELIVERY);
         await prisma.order.update({ 
           where: { id: payment.orderId },
           data: { status: OrderStatus.AWAITING_DELIVERY },
@@ -68,22 +55,10 @@ export class PaymentsService {
 
     //  STRIPE
     if (dto.method === 'STRIPE' as PaymentMethod) { 
-      const paymentIntent = await this.stripe.paymentIntents.create({
-        amount: order.totalAmount, 
-        currency: 'vnd',
-        automatic_payment_methods: {
-          enabled: true,
-          allow_redirects: 'never', 
-        },
-        metadata: {
-          orderId: order.id,
-          paymentId: payment.id,
-        },
-      });
-
-      return {
+      const result = await this.paymentProvider.createPaymentIntent(order.totalAmount, order.id, { paymentId: payment.id });
+    return {
         message: 'Tạo phiên thanh toán Stripe thành công',
-        clientSecret: paymentIntent.client_secret,
+        clientSecret: result.clientSecret,
       };
     }
 
@@ -91,20 +66,9 @@ export class PaymentsService {
   }
 
   // XỬ LÝ WEBHOOK TỪ STRIPE
-async handleStripeWebhook(signature: string, payload: Buffer) {
-    let event: Stripe.Event; 
-    const webhookSecret = this.configService.get<string>('STRIPE_WEBHOOK_SECRET');
-    if (!webhookSecret) {
-      throw new Error('Thiếu STRIPE_WEBHOOK_SECRET');
-    }
+  async handleStripeWebhook(signature: string, payload: Buffer) {
 
-    try {
-      event = this.stripe.webhooks.constructEvent(payload, signature, webhookSecret);
-    } catch (err: any) {
-      this.logger.error(`⚠️ Xác thực Webhook thất bại: ${err.message}`);
-      throw new BadRequestException(`Webhook Error: ${err.message}`);
-    }
-
+    const event = this.paymentProvider.verifyWebhookEvent(payload, signature);
     const data = event?.data?.object as any;
     const paymentId = data?.metadata?.paymentId;
 
@@ -112,8 +76,7 @@ async handleStripeWebhook(signature: string, payload: Buffer) {
       this.logger.warn('Bỏ qua Webhook: Không tìm thấy paymentId trong metadata');
       return { received: true };
     }
-
-    switch (event.type) {
+switch (event.type) {
       case 'payment_intent.succeeded':
         const paymentIntent = event.data.object as any;
         const stripeEventId = event.id;
@@ -128,10 +91,6 @@ async handleStripeWebhook(signature: string, payload: Buffer) {
             this.logger.error(`Không tìm thấy ${paymentId}`);
             return;
           }
-          if(payment.status !== 'PENDING'){
-            this.logger.error(`Payment ${payment.id} đã ở trạng thái ${payment.status}`);
-            return;
-          }
           if(payment.amount !== paymentIntent.amount || paymentIntent.currency.toLowerCase() !== 'vnd'){
             this.logger.error(`Só lượng hoặc đơn vị tiền tệ không khớp!!!`);
             throw new Error('Só lượng hoặc đơn vị tiền tệ không khớp!!!');
@@ -144,7 +103,7 @@ async handleStripeWebhook(signature: string, payload: Buffer) {
             },
             include: { order: true }
           });
-
+          StateTransition.validateTransition(payment.order.status, OrderStatus.PAID);
           await prisma.order.update({ 
             where: { id: payment.orderId },
             data: { status: 'PAID' } 
