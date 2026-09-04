@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, UseGuards, Req , BadRequestException} from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards, Req } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';

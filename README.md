@@ -32,7 +32,7 @@ Một hệ thống Backend API mạnh mẽ dành cho nền tảng thương mại
    ```bash
    npm run start:dev
    ```
-5. ** Test Payment**
+5. **Test Payment**
    ```bash
    stripe listen --forward-to localhost:3000/api/v1/payments/webhook
    ```

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -6,9 +6,17 @@ import { OnEvent } from '@nestjs/event-emitter';
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly prisma: PrismaService, @InjectQueue('notification-queue') private readonly notificationQueue: Queue) {}
+  private readonly logger = new Logger(NotificationsService.name);
 
-  // Lấy toàn bộ thông báo (mới nhất lên đầu)
+  constructor(
+    private readonly prisma: PrismaService,
+    @InjectQueue('notification-queue') private readonly notificationQueue: Queue
+  ) {}
+
+  // ==========================================================
+  // 1. CÁC HÀM XỬ LÝ DỮ LIỆU BÌNH THƯỜNG (Dành cho Controller)
+  // ==========================================================
+  
   getUserNotifications(userId: string) {
     return this.prisma.notification.findMany({
       where: { userId },
@@ -16,7 +24,6 @@ export class NotificationsService {
     });
   }
 
-  // Đếm số thông báo CHƯA ĐỌC (để hiển thị số lên icon quả chuông)
   async getUnreadCount(userId: string) {
     const count = await this.prisma.notification.count({
       where: { userId, isRead: false },
@@ -24,7 +31,6 @@ export class NotificationsService {
     return { unreadCount: count };
   }
 
-  // Đánh dấu 1 thông báo là đã đọc
   async markAsRead(userId: string, notificationId: string) {
     await this.prisma.notification.updateMany({
       where: { id: notificationId, userId },
@@ -33,7 +39,6 @@ export class NotificationsService {
     return { message: 'Đã đánh dấu đọc' };
   }
 
-  // Đánh dấu TẤT CẢ là đã đọc
   async markAllAsRead(userId: string) {
     await this.prisma.notification.updateMany({
       where: { userId, isRead: false },
@@ -41,94 +46,45 @@ export class NotificationsService {
     });
     return { message: 'Đã đánh dấu đọc tất cả' };
   }
-  async pushNotificationToQueue(userId: string, content: string) {
-    await this.notificationQueue.add(
-      'create-notification-job',
-      { userId, content },
-      { attempts: 3, removeOnComplete: true }
-    );
-  }
+
+  // Hàm này ĐƯỢC WORKER GỌI để ghi thực tế xuống Database
   async createNotification(userId: string, content: string) {
     return this.prisma.notification.create({
       data: { userId, content, isRead: false },
     });
   }
 
- @OnEvent('order.created')
-  async handleOrderCreatedEvent(payload: any) {
-    const { userId, content } = payload;
-    return this.prisma.notification.create({
-      data: { 
-        userId, 
-        content, 
-        isRead: false 
-      },
-    });
+  // ==========================================================
+  // 2. KẾT NỐI VỚI HÀNG ĐỢI (BULLMQ)
+  // ==========================================================
+
+  async pushNotificationToQueue(userId: string, content: string) {
+    await this.notificationQueue.add(
+      'create-notification-job',
+      { userId, content },
+      { 
+        attempts: 3,
+        removeOnComplete: true, 
+      }
+    );
   }
+
+  // ==========================================================
+  // 3. LẮNG NGHE SỰ KIỆN TỪ HỆ THỐNG (GOM LẠI THÀNH 1 CHỖ)
+  // ==========================================================
+
+  @OnEvent('order.created')
   @OnEvent('cartItem.created')
-  async handleCartItemCreatedEvent(payload: any) {
-    const { userId, content } = payload;
-    return this.prisma.notification.create({
-      data: { 
-        userId, 
-        content, 
-        isRead: false 
-      },
-    });
-  }
   @OnEvent('cartItem.delete')
-  async handleCartItemDeleteEvent(payload: any) {
-    const { userId, content } = payload;
-    return this.prisma.notification.create({
-      data: { 
-        userId, 
-        content, 
-        isRead: false 
-      },
-    });
-  }
   @OnEvent('paymentCod.created')
-  async handlepaymentCodCreatedEvent(payload: any) {
-    const { userId, content } = payload;
-    return this.prisma.notification.create({
-      data: { 
-        userId, 
-        content, 
-        isRead: false 
-      },
-    });
-  }
   @OnEvent('paymentStripe.created')
-  async handlepaymentStripeCreatedEvent(payload: any) {
-    const { userId, content } = payload;
-    return this.prisma.notification.create({
-      data: { 
-        userId, 
-        content, 
-        isRead: false 
-      },
-    });
-  }
   @OnEvent('profile.update')
-  async handleProfileUpdateEvent(payload: any) {
-    const { userId, content } = payload;
-    return this.prisma.notification.create({
-      data: { 
-        userId, 
-        content, 
-        isRead: false 
-      },
-    });
-  }
   @OnEvent('role.update')
-  async handleRoleUpdateEvent(payload: any) {
-    const { userId, content } = payload;
-    return this.prisma.notification.create({
-      data: { 
-        userId, 
-        content, 
-        isRead: false 
-      },
-    });
+  async handleAllNotificationEvents(payload: { userId: string; content: string }) {
+    try {
+      await this.pushNotificationToQueue(payload.userId, payload.content);
+    } catch (error) {
+      this.logger.error(`Lỗi khi đẩy thông báo vào hàng đợi: ${error.message}`);
+    }
   }
 }

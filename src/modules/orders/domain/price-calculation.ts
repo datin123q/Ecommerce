@@ -6,16 +6,10 @@ export class PriceCalculation {
     voucher?: { id: string; value: number; limit: number; count: number } | null
   ) {
     let totalAmount = 0;
-    const orderItemsData: any[] = [];
+    
     for (const item of cartItems) {
       const productPrice = item.variant.product.price;
       totalAmount += item.quantity * productPrice;
-
-      orderItemsData.push({
-        variantId: item.variantId,
-        quantity: item.quantity,
-        price: productPrice,
-      });
     }
 
     if (voucher) {
@@ -28,7 +22,6 @@ export class PriceCalculation {
 
     return {
       totalAmount,
-      orderItemsData,
       appliedVoucherId: voucher?.id,
       voucherLimit: voucher?.limit
     };

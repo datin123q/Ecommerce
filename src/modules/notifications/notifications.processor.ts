@@ -16,11 +16,17 @@ export class NotificationProcessor extends WorkerHost {
 
     switch (job.name) {
       case 'create-notification-job': 
-        await this.notificationsService.createNotification(
-          job.data.userId, 
-          job.data.content 
-        );
-        this.logger.log(`[Worker] ✅ Đã lưu thông báo cho User ${job.data.userId}`);
+        try {
+          // Gọi sang Service để lưu xuống DB
+          await this.notificationsService.createNotification(
+            job.data.userId, 
+            job.data.content 
+          );
+          this.logger.log(`[Worker] ✅ Đã lưu thông báo cho User ${job.data.userId}`);
+        } catch (error) {
+          this.logger.error(`[Worker] ❌ Lỗi khi lưu thông báo: ${error.message}`);
+          throw error; 
+        }
         break;
 
       default:

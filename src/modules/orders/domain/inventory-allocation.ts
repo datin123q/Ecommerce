@@ -15,18 +15,23 @@ export class InventoryAllocation {
       }
     }
 
-    const inventoryDeductions: { inventoryId: string; quantity: number }[] = [];
+    const orderItemsData: { variantId: string; inventoryId: string; quantity: number; price: number }[] = [];
     const mutableInventories = inventories.map(inv => ({ ...inv }));
 
     for (const item of cartItems) {
       let remainingNeeded = item.quantity;
+      const productPrice = item.variant.product.price;
+
       for (const inv of mutableInventories) {
         if (inv.variantId === item.variantId && inv.quantity > 0) {
           const takeFromThisWarehouse = Math.min(inv.quantity, remainingNeeded);
 
-          inventoryDeductions.push({
-            inventoryId: inv.id,          
+          // Đẩy trực tiếp vào mảng OrderItem
+          orderItemsData.push({
+            variantId: item.variantId,
+            inventoryId: inv.id,      
             quantity: takeFromThisWarehouse, 
+            price: productPrice           
           });
 
           inv.quantity -= takeFromThisWarehouse; 
@@ -37,6 +42,6 @@ export class InventoryAllocation {
       }
     }
 
-    return inventoryDeductions;
+    return orderItemsData; 
   }
 }
