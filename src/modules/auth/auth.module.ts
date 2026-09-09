@@ -4,7 +4,10 @@ import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './strategies/jwt.strategy';
-import { ConfigModule, ConfigService } from '@nestjs/config'; // 1. Import Config
+import { ConfigModule, ConfigService } from '@nestjs/config'; 
+import { GoogleStrategy } from './strategies/google.strategy';
+import { FacebookStrategy} from './strategies/facebook.strategy';
+import { TwitterStrategy } from './strategies/twitter.strategy';
 
 @Module({
   imports: [
@@ -22,6 +25,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config'; // 1. Import Confi
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy], 
+  providers: [AuthService, JwtStrategy, GoogleStrategy, FacebookStrategy, TwitterStrategy], 
 })
 export class AuthModule {}

@@ -3,10 +3,11 @@ import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { LoginDto } from './dto/login.dto';
-//import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'; // Import Guard
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'; 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { AuthGuard } from '@nestjs/passport';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -20,6 +21,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Đăng nhập hệ thống' })
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
@@ -39,7 +41,6 @@ export class AuthController {
   @Post('refresh')
   @ApiOperation({ summary: 'Cấp lại Access Token mới (Dùng Refresh Token)' })
   async refresh(@Body() body: RefreshTokenDto) {
-    // Không cần if(!body.refreshToken) nữa vì class-validator đã tự kiểm tra!
     return this.authService.refreshToken(body.refreshToken);
   }
 
@@ -50,5 +51,53 @@ export class AuthController {
   async logout(@Req() request: any) {
     const userId = request.user.id; 
     return this.authService.logout(userId);
+  }
+
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Đăng nhập google' })
+  async googleAuth() {
+  }
+
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  async googleAuthRedirect(@Req() request: any) { 
+    const tokens = await this.authService.validateSocialLogin(request.user as any);
+    return {
+      message: 'Đăng nhập Google thành công!',
+      data: tokens
+    };
+  }
+
+  @Get('facebook')
+  @UseGuards(AuthGuard('facebook'))
+  @ApiOperation({ summary: 'Đăng nhập facebook' })
+  async facebookAuth() {
+  }
+
+  @Get('facebook/callback')
+  @UseGuards(AuthGuard('facebook'))
+  async facebookAuthRedirect(@Req() request: any) { 
+    const tokens = await this.authService.validateSocialLogin(request.user as any);
+    return {
+      message: 'Đăng nhập Facebook thành công!',
+      data: tokens
+    };
+  }
+
+  @Get('twitter')
+  @UseGuards(AuthGuard('twitter'))
+  @ApiOperation({ summary: 'Đăng nhập X' })
+  async twitterAuth() {
+  }
+
+  @Get('twitter/callback')
+  @UseGuards(AuthGuard('twitter'))
+  async twitterAuthRedirect(@Req() request: any) { 
+    const tokens = await this.authService.validateSocialLogin(request.user as any);
+    return {
+      message: 'Đăng nhập X thành công!',
+      data: tokens
+    };
   }
 }

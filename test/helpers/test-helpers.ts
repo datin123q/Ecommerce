@@ -4,28 +4,28 @@ export class DbHelper {
   constructor(private prisma: PrismaService) {}
 
   async clearDatabase(userEmail?: string) {
-    await this.prisma.voucherUsage.deleteMany();
-    await this.prisma.orderItem.deleteMany();
-    await this.prisma.order.deleteMany();
-    await this.prisma.cartItem.deleteMany();
-    await this.prisma.cart.deleteMany();
-    await this.prisma.inventoryTransaction.deleteMany();
-    await this.prisma.inventory.deleteMany();
-    await this.prisma.warehouse.deleteMany();
-    await this.prisma.productVariant.deleteMany();
-    await this.prisma.product.deleteMany();
-    await this.prisma.category.deleteMany();
+    await this.prisma.db.voucherUsage.deleteMany();
+    await this.prisma.db.orderItem.deleteMany();
+    await this.prisma.db.order.deleteMany();
+    await this.prisma.db.cartItem.deleteMany();
+    await this.prisma.db.cart.deleteMany();
+    await this.prisma.db.inventoryTransaction.deleteMany();
+    await this.prisma.db.inventory.deleteMany();
+    await this.prisma.db.warehouse.deleteMany();
+    await this.prisma.db.productVariant.deleteMany();
+    await this.prisma.db.product.deleteMany();
+    await this.prisma.db.category.deleteMany();
     if (userEmail) {
-      await this.prisma.user.deleteMany({ where: { email: userEmail } });
+      await this.prisma.db.user.deleteMany({ where: { email: userEmail } });
     }
   }
 
   async seedStorefront() {
-    const category = await this.prisma.category.create({
+    const category = await this.prisma.db.category.create({
       data: { name: 'Áo Nam E2E Full', description: 'Category' },
     });
 
-    const product = await this.prisma.product.create({
+    const product = await this.prisma.db.product.create({
       data: {
         name: 'Áo thun Full Test',
         description: 'Desc',
@@ -38,13 +38,13 @@ export class DbHelper {
       include: { variants: true },
     });
 
-    const warehouse = await this.prisma.warehouse.create({
+    const warehouse = await this.prisma.db.warehouse.create({
       data: { name: 'Kho E2E Full', location: 'HN' },
     });
 
     const variantId = product.variants[0].id;
 
-    await this.prisma.inventory.create({
+    await this.prisma.db.inventory.create({
       data: { warehouseId: warehouse.id, variantId, quantity: 100 },
     });
 

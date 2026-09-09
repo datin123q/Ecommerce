@@ -3,6 +3,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { OnEvent } from '@nestjs/event-emitter';
+import { NotificationsGateway } from './notifications.gateway';
 
 @Injectable()
 export class NotificationsService {
@@ -10,29 +11,30 @@ export class NotificationsService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly gateway: NotificationsGateway,
     @InjectQueue('notification-queue') private readonly notificationQueue: Queue
   ) {}
-
+    
   // ==========================================================
   // 1. CÁC HÀM XỬ LÝ DỮ LIỆU BÌNH THƯỜNG (Dành cho Controller)
   // ==========================================================
   
   getUserNotifications(userId: string) {
-    return this.prisma.notification.findMany({
+    return this.prisma.db.notification.findMany({
       where: { userId },
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async getUnreadCount(userId: string) {
-    const count = await this.prisma.notification.count({
+    const count = await this.prisma.db.notification.count({
       where: { userId, isRead: false },
     });
     return { unreadCount: count };
   }
 
   async markAsRead(userId: string, notificationId: string) {
-    await this.prisma.notification.updateMany({
+    await this.prisma.db.notification.updateMany({
       where: { id: notificationId, userId },
       data: { isRead: true },
     });
@@ -40,7 +42,7 @@ export class NotificationsService {
   }
 
   async markAllAsRead(userId: string) {
-    await this.prisma.notification.updateMany({
+    await this.prisma.db.notification.updateMany({
       where: { userId, isRead: false },
       data: { isRead: true },
     });
@@ -49,11 +51,25 @@ export class NotificationsService {
 
   // Hàm này ĐƯỢC WORKER GỌI để ghi thực tế xuống Database
   async createNotification(userId: string, content: string) {
-    return this.prisma.notification.create({
+    // 1. Ghi xuống DB
+    const newNoti = await this.prisma.db.notification.create({
       data: { userId, content, isRead: false },
     });
-  }
 
+    // 2. Lấy số lượng thông báo chưa đọc mới nhất
+    const count = await this.prisma.db.notification.count({
+      where: { userId, isRead: false },
+    });
+
+    // 3. Bắn Realtime qua Socket cho Frontend 
+    this.gateway.sendToUser(userId, 'new_notification', {
+      notification: newNoti,
+      unreadCount: count,
+    });
+
+    this.logger.log(`Đã tạo và bắn realtime thông báo cho User: ${userId}`);
+    return newNoti;
+  }
   // ==========================================================
   // 2. KẾT NỐI VỚI HÀNG ĐỢI (BULLMQ)
   // ==========================================================
@@ -68,10 +84,7 @@ export class NotificationsService {
       }
     );
   }
-
-  // ==========================================================
-  // 3. LẮNG NGHE SỰ KIỆN TỪ HỆ THỐNG (GOM LẠI THÀNH 1 CHỖ)
-  // ==========================================================
+  // 3. LẮNG NGHE SỰ KIỆN TỪ HỆ THỐNG 
 
   @OnEvent('order.created')
   @OnEvent('cartItem.created')

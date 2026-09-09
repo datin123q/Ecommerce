@@ -20,7 +20,7 @@ export class AuditLogsService {
     newValues?: any,
     tx?: Prisma.TransactionClient,
   ) {
-    const db = tx || this.prisma;
+    const db = tx || this.prisma.db;
     return db.auditLog.create({
       data: {
         userId,
@@ -35,7 +35,7 @@ export class AuditLogsService {
 
   // 2. Lấy danh sách nhật ký (Dành cho Admin)
   async getLogs() {
-    return this.prisma.auditLog.findMany({
+    return this.prisma.db.auditLog.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
         user: { select: { email: true, role: true } }, 

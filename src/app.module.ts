@@ -12,6 +12,7 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
+import { TasksModule } from './modules/tasks/tasks.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-redis-yet';
 import { BullModule } from '@nestjs/bullmq';
@@ -19,26 +20,16 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import Redis from 'ioredis';
 import { RedisModule } from './redis/redis.module';
 import { AppLoggerMiddleware } from './common/middlewares/app-logger.middleware';
-import * as Joi from 'joi';
-
+import {ScheduleModule} from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { envValidationSchema } from './config/env.validation';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      validationSchema: Joi.object({
-        PORT: Joi.number().default(3000),
-        DATABASE_URL: Joi.string().required(),
-        
-        // Bắt buộc phải có khóa bí mật cho JWT
-        JWT_ACCESS_SECRET: Joi.string().required(),
-        JWT_REFRESH_SECRET: Joi.string().required(),
-        JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
-        
-        // Các keys quan trọng khác
-        STRIPE_SECRET_KEY: Joi.string().required(),
-        STRIPE_WEBHOOK_SECRET: Joi.string().required(),
-      }),
+      validationSchema: envValidationSchema, 
     }),
     // Đăng ký Cache kết nối Redis toàn cục tại đây
     CacheModule.registerAsync({
@@ -65,6 +56,11 @@ import * as Joi from 'joi';
       }),
       inject: [ConfigService],
     }),
+    ThrottlerModule.forRoot([
+      { name: 'short', ttl: 1000, limit: 3 },    
+      { name: 'long', ttl: 60000, limit: 100 },  
+    ]),
+    ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
     DatabaseModule,
     AuthModule,
@@ -79,6 +75,7 @@ import * as Joi from 'joi';
     NotificationsModule,
     AuditLogsModule,
     RedisModule,
+    TasksModule,
   ],
   controllers: [],
   providers: [
@@ -92,6 +89,7 @@ import * as Joi from 'joi';
       },
       inject: [ConfigService],
     },
+    { provide: APP_GUARD, useClass: ThrottlerGuard }
   ],
   exports: ['REDIS_CLIENT'],
 

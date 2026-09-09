@@ -9,7 +9,7 @@ export class CartsService {
 
   // Lấy giỏ hàng của User 
   async getMyCart(userId: string) {
-    let cart = await this.prisma.cart.findFirst({
+    let cart = await this.prisma.db.cart.findFirst({
       where: { userId },
       include: {
         cartItems: {
@@ -24,7 +24,7 @@ export class CartsService {
 
     // Nếu user chưa có giỏ hàng -> Khởi tạo giỏ hàng rỗng
     if (!cart) {
-      cart = await this.prisma.cart.create({
+      cart = await this.prisma.db.cart.create({
         data: { userId },
         include: { cartItems: { include: { variant: { include: { product: true } } } } },
       });
@@ -36,12 +36,12 @@ export class CartsService {
   async addToCart(userId: string, addToCartDto: AddToCartDto) {
     const { variantId, quantity } = addToCartDto;
 
-    const variant = await this.prisma.productVariant.findUnique({ where: { id: variantId }, include: {product:true} });
+    const variant = await this.prisma.db.productVariant.findUnique({ where: { id: variantId }, include: {product:true} });
     if (!variant) throw new NotFoundException('Sản phẩm không tồn tại');
 
     const cart = await this.getMyCart(userId);
 
-    const cartItem = await this.prisma.cartItem.upsert({
+    const cartItem = await this.prisma.db.cartItem.upsert({
       where: {
         cartId_variantId: {
           cartId: cart.id,
@@ -73,7 +73,7 @@ export class CartsService {
     // Đảm bảo item này thuộc về giỏ hàng của user đang đăng nhập
     const cart = await this.getMyCart(userId);
     
-    const item = await this.prisma.cartItem.findFirst({
+    const item = await this.prisma.db.cartItem.findFirst({
       where: { id: cartItemId, cartId: cart.id }, include: {variant:true}
     });
 
@@ -82,7 +82,7 @@ export class CartsService {
       userId: userId,
       content: `Xóa ${item.variant.name} khỏi giỏ hàng`
     });
-    return this.prisma.cartItem.delete({
+    return this.prisma.db.cartItem.delete({
       where: { id: cartItemId },
     });
   }

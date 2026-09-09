@@ -18,9 +18,13 @@ export class OrdersService {
   ) {}
   
   async createOrder(userId: string, dto: CreateOrderDto) {
-    const cart = await this.prisma.cart.findFirst({
+    const cart = await this.prisma.db.cart.findFirst({
       where: { userId },
-      include: { cartItems: { include: { variant: { include: { product: true } } } } },
+      include: { 
+        cartItems: { 
+          include: { variant: { include: { product: true } } } 
+        } 
+      },
     });
     
     if (!cart || cart.cartItems.length === 0) {
@@ -28,36 +32,48 @@ export class OrdersService {
     }
 
     const variantIds = cart.cartItems.map(item => item.variantId);
-    const inventories = await this.prisma.inventory.findMany({
+    const inventories = await this.prisma.db.inventory.findMany({
       where: { variantId: { in: variantIds } },
       orderBy: { quantity: 'desc' },
     });
 
     const voucher = dto.voucherCode 
-      ? await this.prisma.voucher.findUnique({ where: { code: dto.voucherCode } })
+      ? await this.prisma.db.voucher.findUnique({ where: { code: dto.voucherCode } })
       : undefined;
       
     if (dto.voucherCode && !voucher) {
-      throw new NotFoundException('Mã giảm giá không tồn tại');
+      throw new NotFoundException('Mã giảm giá không tồn tại hoặc đã hết hạn');
     }
 
     const orderItemsData = InventoryAllocation.allocate(cart.cartItems, inventories);
     const { totalAmount, appliedVoucherId, voucherLimit } = PriceCalculation.calculate(cart.cartItems, voucher);
+    const orderItemsWithSnapshot = orderItemsData.map(item => {
+      const cartItem = cart.cartItems.find(c => c.variantId === item.variantId);
+      if (!cartItem?.variant) {
+        throw new BadRequestException('Một sản phẩm trong giỏ hàng không còn tồn tại.');
+      }
 
-    const order = await this.prisma.$transaction(async (prisma) => {
-      // 3.1. Tạo Đơn hàng kèm OrderItems
-      const newOrder = await prisma.order.create({
+      return {
+        ...item,
+        productName: `${cartItem.variant.product.name} - ${cartItem.variant.name}`,
+        sku: cartItem.variant.sku,
+      };
+    });
+
+    const order = await this.prisma.db.$transaction(async (tx) => {
+      // 3.1. Tạo Đơn hàng kèm OrderItems 
+      const newOrder = await tx.order.create({
         data: {
           userId,
           totalAmount,
-          orderItems: { create: orderItemsData }, 
+          orderItems: { create: orderItemsWithSnapshot }, 
         },
         include: { orderItems: true },
       });
 
-      // 3.2. Trừ tồn kho từ orderItemsData
-      const updateInventoryPromises = orderItemsData.map(item => 
-        prisma.inventory.updateMany({
+      // 3.2. Trừ tồn kho 
+      const updateInventoryPromises = orderItemsWithSnapshot.map(item => 
+        tx.inventory.updateMany({
           where: { id: item.inventoryId, quantity: { gte: item.quantity } },
           data: { quantity: { decrement: item.quantity } },
         })
@@ -69,18 +85,18 @@ export class OrdersService {
       }
 
       // 3.3. Ghi log giao dịch xuất kho
-      const transactionLogs = orderItemsData.map(item => ({
+      const transactionLogs = orderItemsWithSnapshot.map(item => ({
         type: TransactionType.OUT, 
         quantity: item.quantity,
         inventoryId: item.inventoryId,
         userId: userId,
       }));
 
-      await this.prisma.inventoryTransaction.createMany({data: transactionLogs});
+      await tx.inventoryTransaction.createMany({ data: transactionLogs });
 
       // 3.4. Xử lý Voucher 
       if (appliedVoucherId && voucherLimit) {
-        const updateVoucher = await prisma.voucher.updateMany({
+        const updateVoucher = await tx.voucher.updateMany({
           where: { id: appliedVoucherId, count: { lt: voucherLimit } },
           data: { count: { increment: 1 } },
         });
@@ -89,13 +105,13 @@ export class OrdersService {
           throw new BadRequestException('Mã giảm giá vừa chạm mức giới hạn, vui lòng bỏ mã ra khỏi giỏ!');
         }
 
-        await prisma.voucherUsage.create({
+        await tx.voucherUsage.create({
           data: { voucherId: appliedVoucherId, userId, orderId: newOrder.id },
         });
       }
 
       // 3.5. Xóa giỏ hàng
-      await prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
+      await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
       
       return newOrder;
     });
@@ -108,28 +124,29 @@ export class OrdersService {
     return order;
   }
 
+
   async updateOrderStatus(orderId: string, newStatus: OrderStatus) {
-    const order = await this.prisma.order.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.db.order.findUnique({ where: { id: orderId } });
     if (!order) throw new NotFoundException('Đơn hàng không tồn tại');
 
     StateTransition.validateTransition(order.status, newStatus);
 
-    return this.prisma.order.update({
+    return this.prisma.db.order.update({
       where: { id: orderId },
       data: { status: newStatus }
     });
   }
 
   getMyOrders(userId: string) {
-    return this.prisma.order.findMany({
+    return this.prisma.db.order.findMany({
       where: { userId },
-      include: { orderItems: { include: { variant: { include: { product: true } } } } },
+      include: { orderItems: true }, 
       orderBy: { createdAt: 'desc' },
     });
   }
 
   async cancelOrder(userId: string, orderId: string) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.db.order.findUnique({
       where: { id: orderId },
       include: { orderItems: true },
     });
@@ -142,21 +159,19 @@ export class OrdersService {
       throw new BadRequestException('Chỉ có thể hủy đơn hàng ở trạng thái đang chờ xử lý (PENDING)');
     }
 
-    const cancelledOrder = await this.prisma.$transaction(async (prisma) => {
+    const cancelledOrder = await this.prisma.db.$transaction(async (tx) => {
       const validItems = order.orderItems.filter(item => item.inventoryId);
-        // 3.1. Hoàn trả số lượng hàng vào kho (Chạy song song bằng Promise.all thay vì for...of)
+      
+      // 3.1. Hoàn trả số lượng hàng vào kho
       const updateInventoryPromises = validItems.map(item =>
-        prisma.inventory.update({
-          where: { id: item.inventoryId! }, // Đã filter null ở trên
+        tx.inventory.update({
+          where: { id: item.inventoryId! }, 
           data: { quantity: { increment: item.quantity } },
         })
       );
       await Promise.all(updateInventoryPromises);
-      // 3.2. Hoàn trả mã giảm giá
-      const voucherUsage = await prisma.voucherUsage.findFirst({
-        where: { orderId: order.id, userId: userId },
-      });
 
+      // 3.2. Lưu log nhập kho hoàn trả
       if (validItems.length > 0) {
         const inTransactionLogs = validItems.map(item => ({
           type: TransactionType.IN,
@@ -164,22 +179,27 @@ export class OrdersService {
           inventoryId: item.inventoryId!,
           userId: userId,
         }));
-        await prisma.inventoryTransaction.createMany({ data: inTransactionLogs });
+        await tx.inventoryTransaction.createMany({ data: inTransactionLogs });
       }
-      //3.2 Hoàn trả mã giảm giá
+
+      // 3.3 Hoàn trả mã giảm giá
+      const voucherUsage = await tx.voucherUsage.findFirst({
+        where: { orderId: order.id, userId: userId },
+      });
+
       if (voucherUsage) {
-        await prisma.voucher.update({
-          where: { id: voucherUsage.voucherId, count: { gt: 0 } },
+        await tx.voucher.update({
+          where: { id: voucherUsage.voucherId},
           data: { count: { decrement: 1 } },
         });
 
-        await prisma.voucherUsage.delete({
+        await tx.voucherUsage.delete({
           where: { id: voucherUsage.id },
         });
       }
 
-      // 3.3. Cập nhật trạng thái
-      return prisma.order.update({
+      // 3.4. Cập nhật trạng thái
+      return tx.order.update({
         where: { id: order.id },
         data: { status: OrderStatus.CANCELLED },
       });

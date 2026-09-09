@@ -25,22 +25,23 @@ enum TransactionType {
   OUT
 }
 
-enum PaymentStatus{
+enum PaymentStatus {
   PENDING
   SUCCESS
   FAILED
 }
 
-enum PaymentMethod{
+enum PaymentMethod {
   COD
   STRIPE
 }
 
-enum AuditAction{
+enum AuditAction {
   CREATE
   DELETE
   UPDATE
 }
+
 // ================= QUẢN LÝ NGƯỜI DÙNG =================
 
 model User {
@@ -49,6 +50,7 @@ model User {
   password     String
   fullName     String
   role         Role    @default(CUSTOMER)
+  avatar       String?
   refreshToken String?
 
   carts                 Cart[]
@@ -58,8 +60,11 @@ model User {
   inventoryTransactions InventoryTransaction[]
   voucherUsages         VoucherUsage[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? 
+
+  @@map("Users") // Chuẩn hóa tên bảng
 }
 
 model Notification {
@@ -69,20 +74,35 @@ model Notification {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
+
+  @@map("Notifications")
 }
 
 model AuditLog {
-  id        String   @id @default(uuid())
+  id        String      @id @default(uuid())
   action    AuditAction
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   entity    String
   entityId  String
-  oldValues  Json?
-  newValues  Json?
-  createdAt DateTime @default(now())
+  oldValues Json?
+  newValues Json?
+  createdAt DateTime    @default(now())
 
   @@map("Audits_log")
+}
+
+model ScheduledJobLog{
+  id              String      @id @default(uuid())
+  jobName         String
+  status          String
+  message         String?
+  recordsAffected Int?
+
+  createdAt DateTime    @default(now())
+
+  @@map("ScheduledJobLog")
+
 }
 
 // ================= DANH MỤC & SẢN PHẨM =================
@@ -93,8 +113,9 @@ model Category {
   description String?
   products    Product[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? 
 
   @@map("Categories")
 }
@@ -106,11 +127,14 @@ model Product {
   price       Int
 
   categoryId String
-  category   Category         @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  // Đổi onDelete: Cascade thành Restrict (hoặc bỏ trống mặc định là Restrict) 
+  // Để không vô tình xóa Product khi xóa Category
+  category   Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   variants   ProductVariant[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
 
   @@map("Products")
 }
@@ -122,11 +146,13 @@ model ProductVariant {
   variant String
 
   productId String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade) // Cascade ở đây ok vì Product và Variant gắn liền
 
   inventories Inventory[]
   cartItems   CartItem[]
   orderItems  OrderItem[]
+
+  deletedAt DateTime? 
 
   @@map("Product_Variants")
 }
@@ -139,7 +165,8 @@ model Warehouse {
   location    String
   inventories Inventory[]
 
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime? 
 
   @@map("Warehouses")
 }
@@ -156,7 +183,7 @@ model Inventory {
 
   updatedAt DateTime @updatedAt
 
-  @@unique([warehouseId, variantId])  
+  @@unique([warehouseId, variantId])
   @@map("Inventories")
 }
 
@@ -166,9 +193,9 @@ model InventoryTransaction {
   quantity Int
 
   inventoryId String
-  inventory   Inventory @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inventory   Inventory  @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   createdAt DateTime @default(now())
 
@@ -195,6 +222,7 @@ model CartItem {
   variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
   @@unique([cartId, variantId])
+  @@map("CartItems")
 }
 
 model Order {
@@ -203,8 +231,7 @@ model Order {
   totalAmount Int
 
   userId String
-  user   User   @relation(fields: [userId], references: [id])
-
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict) 
   orderItems    OrderItem[]
   voucherUsages VoucherUsage[]
   payment       Payment?
@@ -219,22 +246,25 @@ model OrderItem {
   id       String @id @default(uuid())
   quantity Int
   price    Int
-
-  variantId String
-  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
-  orderId   String
-  order     Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productName String
+  sku         String
+  variantId   String? 
+  variant     ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull) 
+  orderId     String
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   inventoryId String?
+
+  @@map("OrderItems")
 }
 
 model Payment {
-  id     String @id @default(uuid())
-  amount Int
-  status PaymentStatus @default(PENDING) 
-  method PaymentMethod @default(COD)
+  id            String        @id @default(uuid())
+  amount        Int
+  status        PaymentStatus @default(PENDING)
+  method        PaymentMethod @default(COD)
   transactionId String?
-  orderId String @unique
-  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId       String        @unique
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 
@@ -252,18 +282,22 @@ model Voucher {
 
   usages VoucherUsage[]
 
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  deletedAt DateTime? 
 
   @@map("Vouchers")
 }
 
 model VoucherUsage {
-  id String @id @default(uuid())
+  id        String  @id @default(uuid())
   voucherId String
-  voucher   Voucher @relation(fields: [voucherId], references: [id])
+  voucher   Voucher @relation(fields: [voucherId], references: [id], onDelete: Restrict)
   userId    String
-  user      User    @relation(fields: [userId], references: [id])
+  user      User    @relation(fields: [userId], references: [id], onDelete: Restrict)
   orderId   String
-  order     Order   @relation(fields: [orderId], references: [id])
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
   createdAt DateTime @default(now())
+
+  @@map("VoucherUsages")
 }

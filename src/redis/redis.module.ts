@@ -1,4 +1,3 @@
-// redis.module.ts
 import { Module, Global } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
@@ -18,6 +17,6 @@ import Redis from 'ioredis';
       inject: [ConfigService],
     },
   ],
-  exports: ['REDIS_CLIENT'], // Bắt buộc phải export ra
+  exports: ['REDIS_CLIENT'],
 })
 export class RedisModule {}

@@ -10,12 +10,12 @@ export class VouchersService {
 
   //  Tạo mã giảm giá
   async create(createVoucherDto: CreateVoucherDto, adminId: string) {
-    const existing = await this.prisma.voucher.findUnique({
+    const existing = await this.prisma.db.voucher.findUnique({
       where: { code: createVoucherDto.code },
     });
     if (existing) throw new ConflictException('Mã voucher này đã tồn tại!');
 
-    const newVoucher = await this.prisma.voucher.create({
+    const newVoucher = await this.prisma.db.voucher.create({
       data: createVoucherDto, 
     });
       this.eventEmitter.emit('voucher.created', {
@@ -32,12 +32,12 @@ export class VouchersService {
 
   //  Xem tất cả mã
   findAll() {
-    return this.prisma.voucher.findMany({ orderBy: { createdAt: 'desc' } });
+    return this.prisma.db.voucher.findMany({ orderBy: { createdAt: 'desc' } });
   }
 
   //  Kiểm tra 
   async checkVoucher(code: string, orderTotal: number) {
-    const voucher = await this.prisma.voucher.findUnique({ where: { code } });
+    const voucher = await this.prisma.db.voucher.findUnique({ where: { code } });
 
     if (!voucher) throw new NotFoundException('Mã giảm giá không hợp lệ hoặc không tồn tại');
 
@@ -57,7 +57,7 @@ export class VouchersService {
   }
   async updateVoucher(voucherId: string, updateVoucherDto: UpdateVoucherDto, adminId: string) {
     // 1. Kiểm tra xem biến thể có tồn tại không
-    const oldVoucher = await this.prisma.voucher.findUnique({ 
+    const oldVoucher = await this.prisma.db.voucher.findUnique({ 
       where: { id: voucherId } 
     });
 
@@ -66,7 +66,7 @@ export class VouchersService {
     }
 
     // 2. Cập nhật dữ liệu mới 
-    const newVoucher = await this.prisma.voucher.update({
+    const newVoucher = await this.prisma.db.voucher.update({
       where: { id: voucherId },
       data: {
         limit: updateVoucherDto.limit,
@@ -88,7 +88,7 @@ export class VouchersService {
     return newVoucher;
   }
   async remove(voucherId: string, adminId:string) {
-    const oldVoucher = await this.prisma.voucher.findUnique({ 
+    const oldVoucher = await this.prisma.db.voucher.findUnique({ 
       where: { id: voucherId } 
     });
 
@@ -97,7 +97,7 @@ export class VouchersService {
     }
 
     // 2. Cập nhật dữ liệu mới 
-    const newVoucher = await this.prisma.voucher.update({
+    const newVoucher = await this.prisma.db.voucher.update({
       where: { id: voucherId },
       data: {
         limit: 0,

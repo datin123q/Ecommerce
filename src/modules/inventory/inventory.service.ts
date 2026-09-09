@@ -13,7 +13,7 @@ export class InventoryService {
 
   // --- NGHIỆP VỤ KHO HÀNG (WAREHOUSE) ---
   async createWarehouse(createWarehouseDto: CreateWarehouseDto, adminId: string) {
-    const newWarehouse = await this.prisma.warehouse.create({ data: createWarehouseDto });
+    const newWarehouse = await this.prisma.db.warehouse.create({ data: createWarehouseDto });
     this.eventEmitter.emit('warehouse.created', {
       id: adminId,
       action: 'CREATE',
@@ -26,17 +26,17 @@ export class InventoryService {
   }
   
   async getWarehouses() {
-    return this.prisma.warehouse.findMany();
+    return this.prisma.db.warehouse.findMany();
   }
 
   async getInventory(){
-    return this.prisma.inventory.findMany();
+    return this.prisma.db.inventory.findMany();
   }
 
   //sửa thông tin kho
   async update(id: string, updateWarehouseDto: UpdateWarehouseDto, adminId: string) {
-    const oldWarehouse = await this.prisma.warehouse.findUnique({ where: { id } }); 
-    const newWarehouse = await this.prisma.warehouse.update({
+    const oldWarehouse = await this.prisma.db.warehouse.findUnique({ where: { id } }); 
+    const newWarehouse = await this.prisma.db.warehouse.update({
       where: { id },
       data: updateWarehouseDto,
     });
@@ -53,7 +53,7 @@ export class InventoryService {
   }
 
     async findOne(id: string) {
-    const warehouse = await this.prisma.warehouse.findUnique({
+    const warehouse = await this.prisma.db.warehouse.findUnique({
       where: { id },
       include: {inventories: true}
     });
@@ -61,9 +61,9 @@ export class InventoryService {
     return warehouse;
   }
     async remove(id: string, adminId: string) {
-      const oldWarehouse = await this.prisma.warehouse.findUnique({ where: { id } }); 
+      const oldWarehouse = await this.prisma.db.warehouse.findUnique({ where: { id } }); 
       if (!oldWarehouse) throw new NotFoundException('Không tìm thấy kho');
-      const stockCount = await this.prisma.inventory.count({
+      const stockCount = await this.prisma.db.inventory.count({
         where: { 
           warehouseId: id,
           quantity: { gt: 0 } 
@@ -74,7 +74,7 @@ export class InventoryService {
         throw new BadRequestException('Không thể xóa kho khi vẫn còn hàng bên trong'); // Lỗi 400 đúng nghĩa hơn 404
       }
 
-      await this.prisma.warehouse.delete({ where: { id } });
+      await this.prisma.db.warehouse.delete({ where: { id } });
 
       this.eventEmitter.emit('warehouse.deleted', { // Đổi tên event chuẩn
         actorId: adminId,
@@ -89,14 +89,14 @@ export class InventoryService {
   async stockIn(userId: string, stockInDto: StockInDto) {
     const { warehouseId, variantId, quantity } = stockInDto;
     // 1. Kiểm tra ID kho và ID biến thể gửi lên có thật không
-    const warehouse = await this.prisma.warehouse.findUnique({ where: { id: warehouseId } });
+    const warehouse = await this.prisma.db.warehouse.findUnique({ where: { id: warehouseId } });
     if (!warehouse) throw new NotFoundException('Không tìm thấy kho hàng');
 
-    const variant = await this.prisma.productVariant.findUnique({ where: { id: variantId } });
+    const variant = await this.prisma.db.productVariant.findUnique({ where: { id: variantId } });
     if (!variant) throw new NotFoundException('Không tìm thấy biến thể sản phẩm');
 
     // 2. Tiến hành giao dịch (Transaction)
-    const result = await this.prisma.$transaction(async (prisma) => {
+    const result = await this.prisma.db.$transaction(async (prisma) => {
       const oldInventory = await prisma.inventory.findUnique({
       where: {
         warehouseId_variantId: { warehouseId, variantId },
@@ -138,14 +138,14 @@ export class InventoryService {
     const { warehouseId, variantId, quantity } = stockOutDto;
 
     // 1. Kiểm tra ID kho và ID biến thể gửi lên có thật không
-    const warehouse = await this.prisma.warehouse.findUnique({ where: { id: warehouseId } });
+    const warehouse = await this.prisma.db.warehouse.findUnique({ where: { id: warehouseId } });
     if (!warehouse) throw new NotFoundException('Không tìm thấy kho hàng');
 
-    const variant = await this.prisma.productVariant.findUnique({ where: { id: variantId } });
+    const variant = await this.prisma.db.productVariant.findUnique({ where: { id: variantId } });
     if (!variant) throw new NotFoundException('Không tìm thấy biến thể sản phẩm');
     
     // 2. Tiến hành giao dịch (Transaction)
-    return this.prisma.$transaction(async (prisma) => {
+    return this.prisma.db.$transaction(async (prisma) => {
       const oldInventory = await prisma.inventory.findUnique({
       where: {
         warehouseId_variantId: { warehouseId, variantId },

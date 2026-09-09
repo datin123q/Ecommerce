@@ -2,9 +2,10 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-
+import session from 'express-session';
 import { WinstonModule, utilities as nestWinstonModuleUtilities } from 'nest-winston'; 
 import * as winston from 'winston';
+import helmet from 'helmet';
 import DailyRotateFile from 'winston-daily-rotate-file'; 
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { TransformInterceptor } from './common/interceptors/tranform.interceptor';
@@ -37,8 +38,14 @@ async function bootstrap() {
     rawBody: true,
     logger: winstonLogger, 
   });
-  
-  app.enableCors();
+  app.use(helmet());
+  app.enableCors({
+    origin: process.env.NODE_ENV === 'production' 
+      ? ['https://my-domain.com', 'https://admin.my-domain.com'] 
+      : ['http://localhost:3000'],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true, 
+  });
   const logger = new Logger('Bootstrap');
 
   app.setGlobalPrefix('api/v1');
@@ -51,7 +58,6 @@ async function bootstrap() {
       transform: true,
     }),
   );
-
   const config = new DocumentBuilder()
     .setTitle('EcommerceCore API')
     .setDescription('')
@@ -66,7 +72,14 @@ async function bootstrap() {
       persistAuthorization: true, 
     },
   });
-
+  app.use(
+    session({
+      secret: 'twitter-session-secret', 
+      resave: false,
+      saveUninitialized: false,
+      cookie: { maxAge: 60000 }, 
+    }),
+  );
   const port = process.env.PORT || 3000;
   await app.listen(port);
   

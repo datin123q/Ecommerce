@@ -5,6 +5,7 @@ import { LoginDto } from './dto/login.dto';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -16,7 +17,7 @@ export class AuthService {
 
   async register(registerDto: RegisterDto) {
     const { email, password, fullName } = registerDto;
-
+    const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(registerDto.fullName)}&background=random&color=fff&size=256`;
     const existingUser = await this.usersService.findByEmail(email);
     if (existingUser) {
       throw new BadRequestException('Email này đã được sử dụng');
@@ -28,6 +29,7 @@ export class AuthService {
       email,
       password: hashedPassword,
       fullName,
+      avatar: defaultAvatar,
     });
 
     return {
@@ -49,26 +51,24 @@ export class AuthService {
     if (!isPasswordValid) {
       throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
     }
-    const payload = { sub: user.id, email: user.email, role: user.role };
-    const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.jwtService.sign(payload, {
-      secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-      expiresIn: this.configService.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN') as any,
-    });
+    return this.generateTokens(user);
+  }
 
-    const hashedRefreshToken = await argon2.hash(refreshToken);
-    await this.usersService.updateRefreshToken(user.id, hashedRefreshToken);
+  async validateSocialLogin(socialUser: { email: string; fullName: string; provider: string; providerId: string ; avatar: string}) {
+    let user = await this.usersService.findByEmail(socialUser.email);
 
-    return {
-      accessToken,
-      refreshToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        fullName: user.fullName,
-        role: user.role,
-      },
-    };
+    if (!user) {
+      const randomPassword = crypto.randomBytes(16).toString('hex');
+      const hashedPassword = await argon2.hash(randomPassword);
+
+      user = await this.usersService.create({
+        email: socialUser.email,
+        password: hashedPassword,
+        fullName: socialUser.fullName,
+        avatar: socialUser.avatar,
+      });
+    }
+    return this.generateTokens(user);
   }
 
   async refreshToken(providedRefreshToken: string) {
@@ -88,20 +88,11 @@ export class AuthService {
         throw new UnauthorizedException('Refresh Token không hợp lệ hoặc đã bị thu hồi');
       }
 
-      const newPayload = { sub: user.id, email: user.email, role: user.role };
-      
-      const newAccessToken = this.jwtService.sign(newPayload);
-      const newRefreshToken = this.jwtService.sign(newPayload, {
-        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-        expiresIn: this.configService.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN') as any,
-      });
-
-      const hashedRefreshToken = await argon2.hash(newRefreshToken);
-      await this.usersService.updateRefreshToken(user.id, hashedRefreshToken);
+      const tokens = await this.generateTokens(user);
 
       return {
-        accessToken: newAccessToken,
-        refreshToken: newRefreshToken,
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
       };
 
     } catch (error) {
@@ -111,5 +102,30 @@ export class AuthService {
   async logout(userId: string) {
     await this.usersService.updateRefreshToken(userId, null);
     return { message: 'Đăng xuất thành công' };
+  }
+
+  private async generateTokens(user: any) {
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    
+    const accessToken = this.jwtService.sign(payload);
+    const refreshToken = this.jwtService.sign(payload, {
+      secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+      expiresIn: this.configService.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN') as any,
+    });
+
+    const hashedRefreshToken = await argon2.hash(refreshToken);
+    await this.usersService.updateRefreshToken(user.id, hashedRefreshToken);
+
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        avatar: user.avatar,
+      },
+    };
   }
 }

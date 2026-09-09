@@ -16,31 +16,16 @@ export class PaymentsService {
 
   // TẠO PHIÊN THANH TOÁN
   async createPaymentIntent(userId: string, dto: CreatePaymentDto) {
-    const order = await this.prisma.order.findUnique({
+    const order = await this.prisma.db.order.findUnique({
       where: { id: dto.orderId, userId: userId },
     });
 
     if (!order) throw new NotFoundException('Không tìm thấy đơn hàng');
 
-    if (order.status === OrderStatus.PAID || order.status === OrderStatus.AWAITING_DELIVERY) {
-      throw new BadRequestException('Đơn hàng này đã được thanh toán hoặc đang được xử lý');
-    }
-    
-    const payment = await this.prisma.payment.upsert({
-      where: { orderId: order.id },
-      update: { method: dto.method, status: PaymentStatus.PENDING },
-      create: {
-        orderId: order.id,
-        amount: order.totalAmount,
-        method: dto.method,
-        status: PaymentStatus.PENDING,
-      },
-      include: { order: true }
-    });
-
     //  COD
     if (dto.method === PaymentMethod.COD) {
-      const payment = await this.prisma.$transaction(async (prisma) => {
+      StateTransition.validateTransition(order.status, OrderStatus.AWAITING_DELIVERY);
+      const payment = await this.prisma.db.$transaction(async (prisma) => {
         const newPayment = await prisma.payment.upsert({
           where: { orderId: order.id },
           update: { method: dto.method, status: PaymentStatus.PENDING },
@@ -66,7 +51,7 @@ export class PaymentsService {
 
     //  STRIPE
     if (dto.method === PaymentMethod.STRIPE) { 
-      const payment = await this.prisma.payment.upsert({
+      const payment = await this.prisma.db.payment.upsert({
         where: { orderId: order.id },
         update: { method: dto.method, status: PaymentStatus.PENDING },
         create: {
@@ -77,7 +62,7 @@ export class PaymentsService {
         },
       });
       try {
-        const amountNum = Math.round(order.totalAmount);
+        const amountNum = Number(order.totalAmount);
         const result = await this.paymentProvider.createPaymentIntent(
           amountNum, 
           order.id, 
@@ -118,7 +103,7 @@ export class PaymentsService {
       case 'payment_intent.succeeded': {
         const paymentIntent = event.data.object as any;
         try {
-          const payment = await this.prisma.payment.findUnique({
+          const payment = await this.prisma.db.payment.findUnique({
             where: { id: paymentId},
             include: {order:true}
           });
@@ -138,8 +123,8 @@ export class PaymentsService {
             this.logger.error(`Lỗi logic tiền tệ: DB ${paymentAmount}, Stripe ${paymentIntent.amount}`);
             return { received: true }; // Lỗi business logic (bị hack sửa tiền), không ném exception
           }
-
-          const isUpdated = await this.prisma.$transaction(async (prisma) => {
+          StateTransition.validateTransition(payment.order.status, OrderStatus.PAID);
+          const isUpdated = await this.prisma.db.$transaction(async (prisma) => {
             const updatePaymentResult = await prisma.payment.updateMany({
               where: { id: paymentId, status: PaymentStatus.PENDING },
               data: {
@@ -173,13 +158,10 @@ export class PaymentsService {
 
       case 'payment_intent.payment_failed': {
         this.logger.warn(`❌ Thanh toán thất bại cho Payment ID: ${paymentId}`);
-        
-        // Update Payment & Order Status (nếu cần thiết)
-        await this.prisma.payment.update({
+        await this.prisma.db.payment.update({
           where: { id: paymentId },
           data: { status: PaymentStatus.FAILED },
         });
-        // Có thể thêm logic emit event thông báo cho user thanh toán thất bại
         break;
       }
     }

@@ -14,7 +14,7 @@ export class ProductsService {
     const { variants, ...productData } = createProductDto;
 
     try {
-      const newProduct = await this.prisma.product.create({
+      const newProduct = await this.prisma.db.product.create({
         data: {
           ...productData,
           variants: {
@@ -48,7 +48,7 @@ export class ProductsService {
 
     const oldProduct = await this.findOne(id); 
 
-    const newProduct = await this.prisma.product.update({
+    const newProduct = await this.prisma.db.product.update({
       where: { id },
       data: {
         name: updateProductDto.name,
@@ -70,7 +70,7 @@ export class ProductsService {
   }
 
   async addVariant(productId: string, variantData: CreateProductVariantDto, adminId: string) {
-    const product = await this.prisma.product.findUnique({
+    const product = await this.prisma.db.product.findUnique({
       where: { id: productId },
     });
 
@@ -79,7 +79,7 @@ export class ProductsService {
     }
 
     try {
-      const newVariant = await this.prisma.productVariant.create({
+      const newVariant = await this.prisma.db.productVariant.create({
         data: {
           sku: variantData.sku,
           name: variantData.name,
@@ -107,7 +107,7 @@ export class ProductsService {
 
   async updateVariant(variantId: string, updateVariantDto: UpdateProductVariantDto, adminId: string) {
     // 1. Kiểm tra xem biến thể có tồn tại không
-    const oldVariant = await this.prisma.productVariant.findUnique({ 
+    const oldVariant = await this.prisma.db.productVariant.findUnique({ 
       where: { id: variantId } 
     });
 
@@ -116,7 +116,7 @@ export class ProductsService {
     }
 
     // 2. Cập nhật dữ liệu mới 
-    const newVariant = await this.prisma.productVariant.update({
+    const newVariant = await this.prisma.db.productVariant.update({
       where: { id: variantId },
       data: {
         sku: updateVariantDto.sku,
@@ -140,13 +140,13 @@ export class ProductsService {
 
 
   findAll() {
-    return this.prisma.product.findMany({
-      include: { category: true, variants: true },
+    return this.prisma.db.product.findMany({
+      include: { variants: true },
     });
   }
 
   async findOne(id: string) {
-    const product = await this.prisma.product.findUnique({
+    const product = await this.prisma.db.product.findUnique({
       where: { id },
       include: { category: true, variants: true },
     });
@@ -155,7 +155,7 @@ export class ProductsService {
   }
 
   async findOneVariant(id: string) {
-    const variant = await this.prisma.productVariant.findUnique({
+    const variant = await this.prisma.db.productVariant.findUnique({
       where: { id },
       include: { product:true },
     });
@@ -166,7 +166,18 @@ export class ProductsService {
 
   async remove(id: string, adminId: string) {
     const oldProduct = await this.findOne(id); 
-    this.eventEmitter.emit('variant.created', {
+    const deletedProduct = await this.prisma.db.$transaction(async (tx) => {
+      await tx.productVariant.deleteMany({
+        where: { productId: id }
+      });
+
+      return tx.product.delete({
+        where: { id },
+      });
+    });
+
+    // 3. Emit event đúng tên
+    this.eventEmitter.emit('product.deleted', {
       id: adminId,
       action: 'DELETE',
       entity: 'Product',
@@ -175,9 +186,7 @@ export class ProductsService {
       newValue: null,   
       tx: this.prisma
     });
-    return this.prisma.product.delete({
-      where: { id },
-    });
+    return deletedProduct;
   }
 
   async removeVariant(id: string, adminId: string) {
@@ -191,7 +200,7 @@ export class ProductsService {
       newValue: null,   
       tx: this.prisma
     });
-    return this.prisma.productVariant.delete({
+    return this.prisma.db.productVariant.delete({
       where: {id},
     })
   }

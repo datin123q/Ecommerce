@@ -4,27 +4,57 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
+const SOFT_DELETE_MODELS = ['User', 'Product', 'ProductVariant', 'Category', 'Warehouse', 'Voucher'];
+
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+export class PrismaService implements OnModuleInit, OnModuleDestroy {
+  private readonly baseClient: PrismaClient;
+  public readonly db; 
+
   constructor() {
-    // 1. Khởi tạo Pool kết nối của 'pg'
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    
-    // 2. Bọc Pool vào PrismaPg adapter
     const adapter = new PrismaPg(pool);
-    
-    // 3. Truyền adapter vào PrismaClient
-    super({ adapter });
+    const base = new PrismaClient({ adapter });
+    this.baseClient = base;
+
+    this.db = base.$extends({
+      query: {
+        // 1. EXTENSION CHO SOFT DELETE (Áp dụng cho các bảng trong mảng)
+        $allModels: {
+          async delete({ model, args, query }) {
+            if (SOFT_DELETE_MODELS.includes(model)) {
+              return (base as any)[model].update({ ...args, data: { deletedAt: new Date() } });
+            }
+            return query(args);
+          },
+          async deleteMany({ model, args, query }) {
+            if (SOFT_DELETE_MODELS.includes(model)) {
+                return (base as any)[model].updateMany({ ...args, data: { deletedAt: new Date() } });
+              }
+              return query(args);
+            },
+          async findMany({ model, args, query }) {
+            if (SOFT_DELETE_MODELS.includes(model)) {
+              args.where = { ...args.where, deletedAt: null };
+            }
+            return query(args);
+          },
+          async findFirst({ model, args, query }) {
+            if (SOFT_DELETE_MODELS.includes(model)) {
+              args.where = { ...args.where, deletedAt: null };
+            }
+            return query(args);
+          }
+        },
+      },
+    });
   }
 
   async onModuleInit() {
-    // Kết nối tới database khi NestJS khởi động
-    await this.$connect();
-    
+    await this.baseClient.$connect();
   }
 
   async onModuleDestroy() {
-    // Ngắt kết nối khi ứng dụng tắt
-    await this.$disconnect();
+    await this.baseClient.$disconnect();
   }
 }
