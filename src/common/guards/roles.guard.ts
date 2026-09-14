@@ -14,12 +14,9 @@ export class RolesGuard implements CanActivate {
       context.getClass(),
     ]);
     
-    // 2. Nếu API không dán nhãn cho phép qua luôn
     if (!requiredRoles) {
       return true;
     }
-    
-    // 3. Lấy thông tin user 
     const request = context.switchToHttp().getRequest();
     const user = request.user;
     

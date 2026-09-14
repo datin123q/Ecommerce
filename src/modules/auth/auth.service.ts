@@ -1,9 +1,12 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { PrismaService } from 'src/database/prisma.service';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 
@@ -13,6 +16,8 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService, 
     private readonly configService: ConfigService,
+    private readonly prisma: PrismaService,
+    @InjectQueue('mail-queue') private readonly mailQueue: Queue,
   ) {}
 
   async register(registerDto: RegisterDto) {
@@ -37,7 +42,114 @@ export class AuthService {
       email: newUser.email,
       fullName: newUser.fullName,
       role: newUser.role,
+      avatar: newUser.avatar,
     };
+  }
+
+  async userVerified(id: string){
+    const user = await this.prisma.db.user.findUnique({
+      where: {id}
+    });
+    if(!user){
+      throw new NotFoundException('Lỗi hệ thống!');
+    }
+    const token = crypto.randomBytes(16).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    
+    await this.usersService.updateUser(id, {
+      verifyToken: hashedToken,
+      verifyExpires: new Date(Date.now() + 15 * 60 * 1000)
+    })
+    const verifyUrl = `http:localhost:3000/verify?token=${token}`;
+    await this.mailQueue.add('verify-account', {
+      email: user.email,
+      verifyUrl: verifyUrl
+    },
+    {
+      removeOnComplete: true, 
+      attempts: 3,         
+    }
+  );
+    return { message:  'Link xác thực đã được gửi!'};
+  }
+
+  async verifyAccount(token: string){
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await this.prisma.db.user.findFirst({
+      where: {
+        verifyToken: hashedToken,
+        verifyExpires: { gt: new Date() }, // Kiểm tra token chưa hết hạn
+      },
+    });
+    if (!user) {
+      throw new BadRequestException('Token không hợp lệ hoặc đã hết hạn!');
+    }
+    await this.prisma.db.user.update({
+      where: { id: user.id },
+      data: {
+        isVerified: true,
+        verifyToken: null,
+        verifyExpires: null,
+      },
+    });
+
+    return { message: 'Xác thực thành công!' };
+  }
+
+  async forgotPassword(email: string){
+    const user = await this.usersService.findByEmail(email);
+    if(!user){
+      throw new NotFoundException('Email không tồn tại!');
+    }
+    const token = crypto.randomBytes(16).toString('hex');
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+
+    await this.usersService.updateUser(user.id, {
+      resetPasswordToken: hashedToken, 
+      resetPasswordExpires: new Date(Date.now() + 15 * 60 * 1000)
+    });
+
+    const resetUrl = `http:localhost:3000/reset-password?token=${token}`;
+    await this.mailQueue.add('forgot-password', {
+      email: user.email,
+      resetUrl: resetUrl
+    },
+    {
+    removeOnComplete: true, 
+    attempts: 3,         
+    }
+  );
+
+    return { message: ' Link khôi phục đã được gửi!' };
+  } 
+
+  async resetPassword(token: string, newPassword: string) {
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+    const user = await this.prisma.db.user.findFirst({
+      where: {
+        resetPasswordToken: hashedToken,
+        resetPasswordExpires: { gt: new Date() }, // Kiểm tra token chưa hết hạn
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Token không hợp lệ hoặc đã hết hạn!');
+    }
+
+    // Băm mật khẩu mới
+    const hashedPassword = await argon2.hash(newPassword);
+
+    // Cập nhật mật khẩu và xóa token
+    await this.prisma.db.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        resetPasswordToken: null,
+        resetPasswordExpires: null,
+      },
+    });
+
+    return { message: 'Đặt lại mật khẩu thành công!' };
   }
 
   async login(loginDto: LoginDto) {
@@ -45,11 +157,11 @@ export class AuthService {
 
     const user = await this.usersService.findByEmail(email);
     if (!user) {
-      throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
+      throw new BadRequestException('Email hoặc mật khẩu không đúng');
     }
     const isPasswordValid = await argon2.verify(user.password, password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Email hoặc mật khẩu không đúng');
+      throw new BadRequestException('Email hoặc mật khẩu không đúng');
     }
     return this.generateTokens(user);
   }
@@ -115,7 +227,7 @@ export class AuthService {
 
     const hashedRefreshToken = await argon2.hash(refreshToken);
     await this.usersService.updateRefreshToken(user.id, hashedRefreshToken);
-
+    console.log(user);
     return {
       accessToken,
       refreshToken,
@@ -128,4 +240,6 @@ export class AuthService {
       },
     };
   }
+
+
 }

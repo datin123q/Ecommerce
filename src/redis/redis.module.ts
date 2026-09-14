@@ -1,8 +1,10 @@
 import { Module, Global } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { RedisCacheService } from './redisCache.service';
 
-@Global() // Bắt buộc phải có cái này để dùng ở mọi nơi
+
+@Global()
 @Module({
   imports: [ConfigModule],
   providers: [
@@ -16,7 +18,8 @@ import Redis from 'ioredis';
       },
       inject: [ConfigService],
     },
+    RedisCacheService,
   ],
-  exports: ['REDIS_CLIENT'],
+  exports: ['REDIS_CLIENT', RedisCacheService],
 })
 export class RedisModule {}

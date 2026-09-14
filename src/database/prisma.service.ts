@@ -4,12 +4,19 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 
-const SOFT_DELETE_MODELS = ['User', 'Product', 'ProductVariant', 'Category', 'Warehouse', 'Voucher'];
+const SOFT_DELETE_MODELS = [
+  'User',
+  'Product',
+  'ProductVariant',
+  'Category',
+  'Warehouse',
+  'Voucher',
+];
 
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
   private readonly baseClient: PrismaClient;
-  public readonly db; 
+  public readonly db;
 
   constructor() {
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -19,7 +26,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
 
     this.db = base.$extends({
       query: {
-        // 1. EXTENSION CHO SOFT DELETE (Áp dụng cho các bảng trong mảng)
+        // 1. EXTENSION CHO SOFT DELETE.
         $allModels: {
           async delete({ model, args, query }) {
             if (SOFT_DELETE_MODELS.includes(model)) {
@@ -29,10 +36,10 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
           },
           async deleteMany({ model, args, query }) {
             if (SOFT_DELETE_MODELS.includes(model)) {
-                return (base as any)[model].updateMany({ ...args, data: { deletedAt: new Date() } });
-              }
-              return query(args);
-            },
+              return (base as any)[model].updateMany({ ...args, data: { deletedAt: new Date() } });
+            }
+            return query(args);
+          },
           async findMany({ model, args, query }) {
             if (SOFT_DELETE_MODELS.includes(model)) {
               args.where = { ...args.where, deletedAt: null };
@@ -44,7 +51,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
               args.where = { ...args.where, deletedAt: null };
             }
             return query(args);
-          }
+          },
         },
       },
     });

@@ -1,13 +1,25 @@
-import { Body, Controller, Get, Post, UseGuards, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  UseGuards,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { VerifyAccountDto } from './dto/verify-account.dto';
 import { LoginDto } from './dto/login.dto';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'; 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Throttle, SkipThrottle } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '@nestjs/passport';
+import { type Response } from 'express';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -23,13 +35,30 @@ export class AuthController {
   @Post('login')
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Đăng nhập hệ thống' })
-  async login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  async login(
+    @Body() loginDto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const tokens = await this.authService.login(loginDto);
+    res.cookie('refresh_token', tokens.refreshToken, {
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    return {
+      message: 'Đăng nhập thành công',
+      data: {
+        accessToken: tokens.accessToken,
+        user: tokens.user,
+      },
+    };
   }
 
   @Get('me')
-  @UseGuards(JwtAuthGuard) 
-  @ApiBearerAuth() 
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Lấy thông tin tài khoản đang đăng nhập' })
   getProfile(@CurrentUser() user: any) {
     return {
@@ -45,7 +74,7 @@ export class AuthController {
   }
 
   @Post('logout')
-  @UseGuards(JwtAuthGuard) 
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth() 
   @ApiOperation({ summary: 'Đăng xuất tài khoản' })
   async logout(@Req() request: any) {
@@ -61,12 +90,19 @@ export class AuthController {
 
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
-  async googleAuthRedirect(@Req() request: any) { 
+  async googleAuthRedirect(@Req() request: any, @Res() res: Response) { 
     const tokens = await this.authService.validateSocialLogin(request.user as any);
-    return {
-      message: 'Đăng nhập Google thành công!',
-      data: tokens
-    };
+    const frontendUrl = 'http://localhost:5173';
+    res.cookie('refresh_token', tokens.refreshToken, {
+      httpOnly: true, // Frontend JS không đọc được
+      secure: false,  // Set true nếu chạy HTTPS (production)
+      sameSite: 'lax', 
+      maxAge: 7 * 24 * 60 * 60 * 1000, 
+    });
+    console.log(tokens.accessToken);
+    return res.redirect(
+      `${frontendUrl}/login-success?accessToken=${tokens.accessToken}`
+    );
   }
 
   @Get('facebook')
@@ -100,4 +136,33 @@ export class AuthController {
       data: tokens
     };
   }
+
+  @Post('forgot-password')
+  @ApiOperation({ summary: 'Gửi link khôi phục mật khẩu qua email' })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto.email);
+  }
+
+  @Post('reset-password')
+  @ApiOperation({ summary: 'Đặt lại mật khẩu bằng Token' })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto.token, dto.newPassword);
+  }
+
+  @Post('verify-user')
+  @UseGuards(JwtAuthGuard) 
+  @ApiBearerAuth() 
+  @ApiOperation({ summary: 'Gửi link xác thực qua email' })
+  userVerified( @CurrentUser() user: any) {
+    return this.authService.userVerified(user.id);
+  }
+
+  @Post('verify-account')
+  @UseGuards(JwtAuthGuard) 
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Xác thực tài khoản bằng Token' })
+  verifyAccount(@Body() dto: VerifyAccountDto) {
+    return this.authService.verifyAccount(dto.token);
+  }
+  
 }

@@ -2,40 +2,43 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { RedisCacheService } from 'src/redis/redisCache.service';
 
 @Injectable()
 export class CartsService {
-  constructor(private readonly prisma: PrismaService, private readonly eventEmitter: EventEmitter2 ) {}
+  constructor(private readonly prisma: PrismaService, private readonly eventEmitter: EventEmitter2, private readonly cacheService: RedisCacheService ) {}
 
-  // Lấy giỏ hàng của User 
   async getMyCart(userId: string) {
+    const cacheKey = `cart_${userId}_v`;
+    const cachedCarts = await this.cacheService.get<any>(cacheKey);
+    if (cachedCarts) {
+      return cachedCarts;
+    }
     let cart = await this.prisma.db.cart.findFirst({
       where: { userId },
       include: {
         cartItems: {
           include: {
             variant: {
-              include: { product: true }, // Lấy kèm thông tin tên SP và giá
+              include: { product: true }, 
             },
           },
         },
       },
     });
 
-    // Nếu user chưa có giỏ hàng -> Khởi tạo giỏ hàng rỗng
     if (!cart) {
       cart = await this.prisma.db.cart.create({
         data: { userId },
         include: { cartItems: { include: { variant: { include: { product: true } } } } },
       });
     }
+    await this.cacheService.set(cacheKey, cart);
     return cart;
   }
 
-  // Thêm sản phẩm vào giỏ
   async addToCart(userId: string, addToCartDto: AddToCartDto) {
     const { variantId, quantity } = addToCartDto;
-
     const variant = await this.prisma.db.productVariant.findUnique({ where: { id: variantId }, include: {product:true} });
     if (!variant) throw new NotFoundException('Sản phẩm không tồn tại');
 
@@ -64,15 +67,13 @@ export class CartsService {
       userId: userId,
       content: `Đã thêm ${variant.name} x ${quantity} vào giỏ hàng`
     });
-
+    const cacheKey = `cart_${userId}_v`;
+    await this.cacheService.del(cacheKey);
     return cartItem;
   }
 
-  // Xóa 1 mặt hàng khỏi giỏ
   async removeCartItem(userId: string, cartItemId: string) {
-    // Đảm bảo item này thuộc về giỏ hàng của user đang đăng nhập
-    const cart = await this.getMyCart(userId);
-    
+    const cart = await this.getMyCart(userId);    
     const item = await this.prisma.db.cartItem.findFirst({
       where: { id: cartItemId, cartId: cart.id }, include: {variant:true}
     });
@@ -82,6 +83,8 @@ export class CartsService {
       userId: userId,
       content: `Xóa ${item.variant.name} khỏi giỏ hàng`
     });
+    const cacheKey = `cart_${userId}_v`;
+    await this.cacheService.del(cacheKey);
     return this.prisma.db.cartItem.delete({
       where: { id: cartItemId },
     });

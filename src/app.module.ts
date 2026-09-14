@@ -23,7 +23,9 @@ import { AppLoggerMiddleware } from './common/middlewares/app-logger.middleware'
 import {ScheduleModule} from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
+import { MailerModule} from '@nestjs-modules/mailer';
 import { envValidationSchema } from './config/env.validation';
+
 
 @Module({
   imports: [
@@ -31,7 +33,6 @@ import { envValidationSchema } from './config/env.validation';
       isGlobal: true,
       validationSchema: envValidationSchema, 
     }),
-    // Đăng ký Cache kết nối Redis toàn cục tại đây
     CacheModule.registerAsync({
       isGlobal: true, 
       imports: [ConfigModule],
@@ -60,6 +61,24 @@ import { envValidationSchema } from './config/env.validation';
       { name: 'short', ttl: 1000, limit: 3 },    
       { name: 'long', ttl: 60000, limit: 100 },  
     ]),
+    MailerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        transport: {
+          host: configService.get<string>('MAIL_HOST'),
+          port: configService.get<string>('MAIL_PORT'),
+          secure: false, // true nếu dùng port 465, false nếu dùng 587
+          auth: {
+            user: configService.get<string>('MAIL_USER'),
+            pass: configService.get<string>('MAIL_PASS'),
+          },
+        },
+        defaults: {
+          from: configService.get<string>('MAIL_FROM'),
+        },
+      }),
+    }),
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
     DatabaseModule,
@@ -95,7 +114,6 @@ import { envValidationSchema } from './config/env.validation';
 
 })
 export class AppModule implements NestModule { 
-  // 2. Triển khai hàm configure
   configure(consumer: MiddlewareConsumer) {
     consumer
       .apply(AppLoggerMiddleware) 

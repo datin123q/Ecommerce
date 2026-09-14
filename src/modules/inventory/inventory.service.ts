@@ -25,11 +25,11 @@ export class InventoryService {
     return newWarehouse;
   }
   
-  async getWarehouses() {
+  getWarehouses() {
     return this.prisma.db.warehouse.findMany();
   }
 
-  async getInventory(){
+  getInventory(){
     return this.prisma.db.inventory.findMany();
   }
 

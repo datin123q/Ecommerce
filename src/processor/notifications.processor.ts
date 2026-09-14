@@ -1,7 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { NotificationsService } from './notifications.service';
+import { NotificationsService } from '../modules/notifications/notifications.service';
 
 @Processor('notification-queue')
 export class NotificationProcessor extends WorkerHost {
@@ -17,20 +17,19 @@ export class NotificationProcessor extends WorkerHost {
     switch (job.name) {
       case 'create-notification-job': 
         try {
-          // Gọi sang Service để lưu xuống DB
           await this.notificationsService.createNotification(
             job.data.userId, 
             job.data.content 
           );
-          this.logger.log(`[Worker] ✅ Đã lưu thông báo cho User ${job.data.userId}`);
+          this.logger.log(`[Worker] Đã lưu thông báo cho User ${job.data.userId}`);
         } catch (error) {
-          this.logger.error(`[Worker] ❌ Lỗi khi lưu thông báo: ${error.message}`);
+          this.logger.error(`[Worker]  Lỗi khi lưu thông báo: ${error.message}`);
           throw error; 
         }
         break;
 
       default:
-        this.logger.warn(`[Worker] ⚠️ Bỏ qua Job vì không nhận diện được tên: ${job.name}`);
+        this.logger.warn(`[Worker]  Bỏ qua Job vì không nhận diện được tên: ${job.name}`);
     }
   }
 }

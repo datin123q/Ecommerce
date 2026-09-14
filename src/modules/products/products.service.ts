@@ -1,18 +1,21 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable,Inject, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
 import { CreateProductVariantDto } from './dto/create-product.dto';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2 } from '@nestjs/event-emitter'; 
+import { RedisCacheService } from 'src/redis/redisCache.service';
+
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService, private readonly eventEmitter: EventEmitter2) {}
-  //tạo products
+  private readonly CACHE_TTL = 600000; 
+  constructor(private readonly prisma: PrismaService, private readonly eventEmitter: EventEmitter2, private readonly cacheService: RedisCacheService ) {}
+
   async create(createProductDto: CreateProductDto, adminId: string) {
     const { variants, ...productData } = createProductDto;
-
+    const cacheKey = 'products_key';
     try {
       const newProduct = await this.prisma.db.product.create({
         data: {
@@ -35,6 +38,7 @@ export class ProductsService {
         newValue: newProduct,   
         tx: this.prisma
       });
+      await this.cacheService.del(cacheKey,`category_${newProduct.categoryId}_v` );
       return newProduct;
     } catch (error) {
       if (error.code === 'P2002') {
@@ -65,7 +69,7 @@ export class ProductsService {
       newValue: newProduct,   
       tx: this.prisma
     });
-
+    await this.cacheService.del('products_key',`products_${id}_v`,`category_${newProduct.categoryId}_v`  );
     return newProduct;
   }
 
@@ -96,6 +100,7 @@ export class ProductsService {
         newValue: newVariant,   
         tx: this.prisma
       });
+    await this.cacheService.del('products_key', `product_${productId}_v`,`variant_${newVariant.id}_v` );
       return newVariant;
     } catch (error: any) {
       if (error.code === 'P2002') {
@@ -135,31 +140,51 @@ export class ProductsService {
       newValue: newVariant,   
       tx: this.prisma
     });
+    await this.cacheService.del('products_key', `product_${newVariant.productId}_v`, `variant_${newVariant.id}_v`);
     return newVariant;
   }
 
 
-  findAll() {
-    return this.prisma.db.product.findMany({
+  async findAll() {
+    const cacheKey = 'products_key';
+    const cachedCarts = await this.cacheService.get<any>(cacheKey);
+    if (cachedCarts) {
+      return cachedCarts;
+    }
+    const products = await this.prisma.db.product.findMany({
       include: { variants: true },
     });
+    await this.cacheService.set(cacheKey, products);
+    return products;
   }
 
   async findOne(id: string) {
+    const cacheKey = `product_${id}_v`;
+    const cachedCarts = await this.cacheService.get<any>(cacheKey);
+    if (cachedCarts) {
+      return cachedCarts;
+    }
     const product = await this.prisma.db.product.findUnique({
       where: { id },
       include: { category: true, variants: true },
     });
     if (!product) throw new NotFoundException('Không tìm thấy sản phẩm');
+    await this.cacheService.set(cacheKey, product);
     return product;
   }
 
   async findOneVariant(id: string) {
+    const cacheKey =  `variant_${id}_v`;
+    const cachedCarts = await this.cacheService.get<any>(cacheKey);
+    if (cachedCarts) {
+      return cachedCarts;
+    }
     const variant = await this.prisma.db.productVariant.findUnique({
       where: { id },
       include: { product:true },
     });
     if (!variant) throw new NotFoundException('Không tìm thấy sản phẩm');
+    await this.cacheService.set(cacheKey, variant);
     return variant;
   }
 
@@ -176,7 +201,6 @@ export class ProductsService {
       });
     });
 
-    // 3. Emit event đúng tên
     this.eventEmitter.emit('product.deleted', {
       id: adminId,
       action: 'DELETE',
@@ -186,12 +210,13 @@ export class ProductsService {
       newValue: null,   
       tx: this.prisma
     });
+    await this.cacheService.del('products_key',`products_${id}_v`,`category_${oldProduct.categoryId}_v`  );
     return deletedProduct;
   }
 
   async removeVariant(id: string, adminId: string) {
     const oldVariant = await this.findOneVariant(id);
-    this.eventEmitter.emit('variant.created', {
+    this.eventEmitter.emit('variant.deleted', {
       id: adminId,
       action: 'DELETE',
       entity: 'ProductVariant',
@@ -200,6 +225,7 @@ export class ProductsService {
       newValue: null,   
       tx: this.prisma
     });
+    await this.cacheService.del('products_key',`product_${oldVariant.productId}_v`,`variant_${oldVariant.id}_v` );
     return this.prisma.db.productVariant.delete({
       where: {id},
     })

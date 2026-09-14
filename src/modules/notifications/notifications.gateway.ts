@@ -4,7 +4,7 @@ import { Logger } from '@nestjs/common';
 
 @WebSocketGateway({
   cors: { origin: '*' },
-  namespace: '/ws/notifications', // Đường dẫn cho client kết nối
+  namespace: '/ws/notifications', 
 })
 export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()

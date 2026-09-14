@@ -16,4 +16,9 @@ export class TasksController {
   async triggerCancelOrders() {
     return this.tasksService.handleCancelOrders(); 
   }
+  @Post('auto-send-mail-marketing')
+  @ApiOperation({ summary: 'Gửi mail marketing' })
+  async triggerSendMailMarketing() {
+    return this.tasksService.handleSendMailMarketing(); 
+  }
 }

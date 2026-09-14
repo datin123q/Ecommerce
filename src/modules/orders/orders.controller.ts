@@ -19,7 +19,7 @@ export class OrdersController {
       description: 'Mã định danh duy nhất để chống trùng lặp giao dịch (VD: uuid)',
       required: true,
     })
-    @UseInterceptors(IdempotencyInterceptor)
+  @UseInterceptors(IdempotencyInterceptor)
   @ApiOperation({ summary: 'Chốt đơn từ Giỏ hàng (Có thể kèm Voucher)' })
   createOrder(@CurrentUser() user: any, @Body() createOrderDto: CreateOrderDto) {
     return this.ordersService.createOrder(user.id, createOrderDto);

@@ -9,6 +9,7 @@ import helmet from 'helmet';
 import DailyRotateFile from 'winston-daily-rotate-file'; 
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { TransformInterceptor } from './common/interceptors/tranform.interceptor';
+import { useContainer } from 'class-validator';
 
 async function bootstrap() {
   const winstonLogger = WinstonModule.createLogger({
@@ -40,12 +41,11 @@ async function bootstrap() {
   });
   app.use(helmet());
   app.enableCors({
-    origin: process.env.NODE_ENV === 'production' 
-      ? ['https://my-domain.com', 'https://admin.my-domain.com'] 
-      : ['http://localhost:3000'],
+    origin: ['http://localhost:5173'],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true, 
   });
+  useContainer(app.select(AppModule), {fallbackOnErrors: true})
   const logger = new Logger('Bootstrap');
 
   app.setGlobalPrefix('api/v1');

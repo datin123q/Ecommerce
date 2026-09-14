@@ -35,7 +35,6 @@ describe('CartsService', () => {
     variant: mockVariant,
   };
 
-  // --- MOCK SERVICES ---
   const mockPrismaService = {
     cart: {
       findFirst: jest.fn(),

@@ -96,7 +96,6 @@ export class VouchersService {
       throw new NotFoundException(`Không tìm thấy voucher với id ${voucherId}`);
     }
 
-    // 2. Cập nhật dữ liệu mới 
     const newVoucher = await this.prisma.db.voucher.update({
       where: { id: voucherId },
       data: {
@@ -105,7 +104,6 @@ export class VouchersService {
       }
     });
 
-    // 3. Ghi lại Audit Log
     this.eventEmitter.emit('voucher.delete', {
       id: adminId,
       action: 'DELETE',

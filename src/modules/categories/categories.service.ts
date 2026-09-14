@@ -1,21 +1,20 @@
-import { ConflictException, Inject, Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma } from '@prisma/client';
-import Redis from 'ioredis'; 
+import { RedisCacheService } from '../../redis/redisCache.service';
 
 @Injectable()
 export class CategoriesService {
   private readonly CACHE_KEY_ALL = 'categories_all';
-  private readonly CACHE_TTL = 600000; 
 
   constructor(
-    private readonly prisma: PrismaService, 
+    private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
-    @Inject('REDIS_CLIENT') private readonly redisClient: Redis 
-  ) {}
+    private readonly cacheService: RedisCacheService,
+  ) { }
 
   async create(createCategoryDto: CreateCategoryDto, adminId: string) {
     try {
@@ -28,12 +27,11 @@ export class CategoriesService {
         action: 'CREATE',
         entity: 'Category',
         entityId: newCategory.id,
-        oldValue: null,        
-        newValue: newCategory,   
+        oldValue: null,
+        newValue: newCategory,
         tx: this.prisma
       });
 
-      // Xóa mồi cache vì dữ liệu đã thay đổi
       await this.clearCategoryCaches();
       return newCategory;
 
@@ -46,55 +44,43 @@ export class CategoriesService {
   }
 
   async findAll() {
-    // 1. Lấy chuỗi JSON từ Redis
-    const cachedStr = await this.redisClient.get(this.CACHE_KEY_ALL);
-    if (cachedStr) {
-      return JSON.parse(cachedStr); 
+    const cachedCategories = await this.cacheService.get<any>(this.CACHE_KEY_ALL);
+    if (cachedCategories) {
+      return cachedCategories;
     }
 
-    // 2. Nếu không có, query DB
     const categories = await this.prisma.db.category.findMany({
       include: { _count: { select: { products: true } } }
     });
-
-    await this.redisClient.set(
-      this.CACHE_KEY_ALL, 
-      JSON.stringify(categories), 
-      'PX', 
-      this.CACHE_TTL
-    );
+    console.log(categories);
+    await this.cacheService.set(this.CACHE_KEY_ALL, categories);
 
     return categories;
   }
 
   async findOne(id: string) {
     const cacheKey = `category_${id}_v`;
-    
-    const cachedStr = await this.redisClient.get(cacheKey);
-    if (cachedStr) {
-      return JSON.parse(cachedStr);
+
+    const cachedCategories = await this.cacheService.get<any>(cacheKey);
+    if (cachedCategories) {
+      return cachedCategories;
     }
 
     const category = await this.prisma.db.category.findUnique({
       where: { id },
-      include: {products: {include:{variants:true}}}
+      include: { products: { include: { variants: true } } }
     });
-    
+
     if (!category) throw new NotFoundException('Không tìm thấy danh mục');
 
-    await this.redisClient.set(
-      cacheKey, 
-      JSON.stringify(category), 
-      'PX', 
-      this.CACHE_TTL
-    );
+    await this.cacheService.set(cacheKey, category);
 
     return category;
   }
 
   async update(id: string, updateCategoryDto: UpdateCategoryDto, adminId: string) {
-    const oldCategory = await this.findOne(id); 
-    
+    const oldCategory = await this.findOne(id);
+
     try {
       const newCategory = await this.prisma.db.category.update({
         where: { id },
@@ -106,8 +92,8 @@ export class CategoriesService {
         action: 'UPDATE',
         entity: 'Category',
         entityId: id,
-        oldValue: oldCategory,        
-        newValue: newCategory,   
+        oldValue: oldCategory,
+        newValue: newCategory,
         tx: this.prisma
       });
 
@@ -121,22 +107,20 @@ export class CategoriesService {
     }
   }
 
-async remove(id: string, adminId: string) {
-    const oldCategory = await this.findOne(id); 
-    const productsInCat = await this.prisma.db.product.findMany({
+  async remove(id: string, adminId: string) {
+    const oldCategory = await this.findOne(id);
+    const productsInCart = await this.prisma.db.product.findMany({
       where: { categoryId: id },
       select: { id: true },
     });
-    
-    const productIds = productsInCat.map(p => p.id);
+
+    const productIds = productsInCart.map(p => p.id);
     const deletedCategory = await this.prisma.db.$transaction(async (tx) => {
-      
+
       if (productIds.length > 0) {
         await tx.productVariant.deleteMany({
           where: { productId: { in: productIds } }
         });
-        
-        //await tx.cartItem.deleteMany({ where: { variantId: { in: variantIds } } });
       }
       await tx.product.deleteMany({
         where: { categoryId: id }
@@ -152,8 +136,8 @@ async remove(id: string, adminId: string) {
       action: 'DELETE',
       entity: 'Category',
       entityId: id,
-      oldValue: oldCategory,        
-      newValue: null,   
+      oldValue: oldCategory,
+      newValue: null,
       tx: this.prisma
     });
 
@@ -162,9 +146,10 @@ async remove(id: string, adminId: string) {
   }
 
   private async clearCategoryCaches(categoryId?: string) {
-    await this.redisClient.del(this.CACHE_KEY_ALL);
+    const keysToDelete = [this.CACHE_KEY_ALL];
     if (categoryId) {
-      await this.redisClient.del(`category_${categoryId}`);
+      keysToDelete.push(`category_${categoryId}_v`);
     }
+    await this.cacheService.del(...keysToDelete);
   }
 }

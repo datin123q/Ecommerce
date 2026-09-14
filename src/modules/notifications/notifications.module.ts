@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { NotificationsController } from './notifications.controller';
-import { NotificationProcessor } from './notifications.processor';
+import { NotificationProcessor } from '../../processor/notifications.processor';
 import { DatabaseModule } from '../../database/database.module';
 import { NotificationsGateway } from './notifications.gateway';
 import { BullModule } from '@nestjs/bullmq';
