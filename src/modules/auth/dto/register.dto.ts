@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEmail, IsNotEmpty, IsString, MinLength } from 'class-validator';
-import { IsEmailUnique } from 'src/validator/is-email-unique.validator';
+import { IsEmailUnique } from '../../../validator/is-email-unique.validator';
 
 export class RegisterDto {
   @ApiProperty({ example: 'test@example.com' })

@@ -14,7 +14,6 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  // Nếu token hợp lệ, hàm này sẽ chạy.
   async validate(payload: any) {
       const user = await this.usersService.findById(payload.sub); 
       if (!user) {

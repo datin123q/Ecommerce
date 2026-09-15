@@ -14,9 +14,8 @@ export class RedisCacheService{
         return data as any; 
         }
     }
-    async set(key: string, value: any, ttlMs: number = 600000): Promise<void> {
-        const stringValue = typeof value === 'object' ? JSON.stringify(value) : value;
-        await this.redisClient.set(key, stringValue, 'PX', ttlMs);
+    async set(key: string, value: object, ttlMs: number = 600000): Promise<void> {
+        await this.redisClient.set(key, JSON.stringify(value), 'PX', ttlMs);
     }
     async del(...keys: string[]): Promise<void> {
         if (keys.length > 0) {

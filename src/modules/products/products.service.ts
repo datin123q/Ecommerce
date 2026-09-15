@@ -5,7 +5,7 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
 import { CreateProductVariantDto } from './dto/create-product.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter'; 
-import { RedisCacheService } from 'src/redis/redisCache.service';
+import { RedisCacheService } from '../../redis/redisCache.service';
 
 
 @Injectable()

@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { RedisCacheService } from 'src/redis/redisCache.service';
+import { RedisCacheService } from '../../redis/redisCache.service';
 
 @Injectable()
 export class CartsService {

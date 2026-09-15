@@ -29,7 +29,7 @@ export class StripeAdapter implements IPaymentProvider {
     return { clientSecret: paymentIntent.client_secret };
   }
 
-  verifyWebhookEvent(payload: Buffer, signature: string) {
+  verifyWebhookEvent(payload: Buffer, signature: string): Stripe.Event {
     try {
       return this.stripe.webhooks.constructEvent(payload, signature, this.webhookSecret);
     } catch (err: any) {

@@ -6,7 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { PrismaService } from 'src/database/prisma.service';
+import { PrismaService } from '../../database/prisma.service';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 
@@ -227,7 +227,7 @@ export class AuthService {
 
     const hashedRefreshToken = await argon2.hash(refreshToken);
     await this.usersService.updateRefreshToken(user.id, hashedRefreshToken);
-    console.log(user);
+    // console.log(user);
     return {
       accessToken,
       refreshToken,

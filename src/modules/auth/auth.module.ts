@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
-import { DatabaseModule } from 'src/database/database.module';
+import { DatabaseModule } from '../../database/database.module'
 import { JwtModule } from '@nestjs/jwt';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { ConfigModule, ConfigService } from '@nestjs/config'; 
@@ -10,8 +10,8 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { FacebookStrategy} from './strategies/facebook.strategy';
 import { TwitterStrategy } from './strategies/twitter.strategy';
 import { BullModule } from '@nestjs/bullmq';
-import { MailProcessor } from 'src/processor/mails.processor';
-import { IsEmailUniqueConstraint } from 'src/validator/is-email-unique.validator';
+import { MailProcessor } from '../../processor/mails.processor';
+import { IsEmailUniqueConstraint } from '../../validator/is-email-unique.validator';
 @Module({
   imports: [
     DatabaseModule,

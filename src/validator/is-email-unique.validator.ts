@@ -4,7 +4,7 @@ import {
   ValidatorConstraintInterface,
   ValidationArguments,
 } from 'class-validator';
-import { PrismaService } from 'src/database/prisma.service';
+import { PrismaService } from '../database/prisma.service';
 import { registerDecorator, ValidationOptions } from 'class-validator';
 
 @ValidatorConstraint({ name: 'IsEmailUnique', async: true })
