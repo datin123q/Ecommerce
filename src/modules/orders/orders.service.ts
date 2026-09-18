@@ -7,6 +7,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { StateTransition } from './domain/state-transition';
 import { PriceCalculation } from './domain/price-calculation';
 import { InventoryAllocation } from './domain/inventory-allocation';
+import { RedisCacheService } from '../../redis/redisCache.service';
 
 @Injectable()
 export class OrdersService {
@@ -14,7 +15,8 @@ export class OrdersService {
 
   constructor(
     private readonly prisma: PrismaService, 
-    private readonly eventEmitter: EventEmitter2
+    private readonly eventEmitter: EventEmitter2,
+    private readonly cacheService: RedisCacheService,
   ) {}
   
   async createOrder(userId: string, dto: CreateOrderDto) {
@@ -120,7 +122,8 @@ export class OrdersService {
       userId: order.userId,
       content: `Đơn hàng mã số ${order.id} đã được xác nhận`
     });
-
+    const cacheKey = `cart_${userId}_v`;
+    await this.cacheService.del(cacheKey);
     return order;
   }
 
@@ -143,6 +146,12 @@ export class OrdersService {
       include: { orderItems: true }, 
       orderBy: { createdAt: 'desc' },
     });
+  }
+  getOneOrder(orderId: string){
+    return this.prisma.db.order.findUnique({
+      where: {id: orderId},
+      include: {orderItems: true}
+    })
   }
 
   async cancelOrder(userId: string, orderId: string) {

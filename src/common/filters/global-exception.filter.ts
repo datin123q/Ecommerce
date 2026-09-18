@@ -28,13 +28,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         ? exception.getResponse()
         : null;
 
-    // 2. Trích xuất Message 
     let message = 'Lỗi hệ thống nội bộ, vui lòng thử lại sau!';
     if (exceptionResponse && typeof exceptionResponse === 'object' && 'message' in exceptionResponse) {
       const msg = (exceptionResponse as any).message;
       message = Array.isArray(msg) ? msg.join(', ') : msg;
     } else if (exception instanceof Error) {
-      // Chỉ lấy message gốc nếu không phải lỗi 500 (tránh lộ thông tin nhạy cảm)
       if (status !== HttpStatus.INTERNAL_SERVER_ERROR) {
         message = exception.message;
       }
@@ -52,7 +50,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       exception instanceof Error ? exception.stack : 'Unknown Error',
     );
 
-    // 5. Format chuẩn JSON (Error Contract) trả về cho Frontend
+    // 5. Format 
     response.status(status).json({
       success: false,         
       errorCode: errorCode,   

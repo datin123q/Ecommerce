@@ -2,6 +2,7 @@ import { Injectable,Inject, NotFoundException, ConflictException } from '@nestjs
 import { PrismaService } from '../../database/prisma.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { GetProductsDto } from './dto/get-products.dto';
 import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
 import { CreateProductVariantDto } from './dto/create-product.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter'; 
@@ -145,18 +146,49 @@ export class ProductsService {
   }
 
 
-  async findAll() {
-    const cacheKey = 'products_key';
-    const cachedCarts = await this.cacheService.get<any>(cacheKey);
-    if (cachedCarts) {
-      return cachedCarts;
+  async findAll(query: GetProductsDto) {
+    const {
+      page = 1,
+      limit = 10,
+      sortBy = 'name',
+      sortOrder = 'asc',
+    } = query;
+    const skip = (page - 1) * limit;
+    const cacheKey = `products:page=${page}:limit=${limit}:sortBy=${sortBy}:sortOrder=${sortOrder}`;
+    const cachedProducts = await this.cacheService.get<any>(cacheKey);
+    if (cachedProducts) {
+      return cachedProducts;
     }
-    const products = await this.prisma.db.product.findMany({
-      include: { variants: true },
-    });
-    await this.cacheService.set(cacheKey, products);
-    return products;
-  }
+    const [products, total] = await Promise.all([
+      this.prisma.db.product.findMany({
+        skip,
+        take: limit,
+        include: {
+          variants: true,
+        },
+        orderBy: {
+          [sortBy]: sortOrder,
+        },
+      }),
+      this.prisma.db.product.count(),
+    ]);
+
+  const result = {
+    data: products,
+    meta: {
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      hasNextPage: page < Math.ceil(total / limit),
+      hasPreviousPage: page > 1,
+    },
+  };
+
+  await this.cacheService.set(cacheKey, result);
+
+  return result;
+}
 
   async findOne(id: string) {
     const cacheKey = `product_${id}_v`;

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { CreateProductVariantDto } from './dto/create-product.dto';
@@ -11,6 +11,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
+import { GetProductsDto } from './dto/get-products.dto';
 
 @ApiTags('Products (Sản phẩm)')
 @Controller('products')
@@ -19,7 +20,7 @@ export class ProductsController {
 
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN) // Chỉ Admin mới được tạo sản phẩm
+  @Roles(Role.ADMIN) 
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Tạo sản phẩm & Biến thể cùng lúc (Chỉ ADMIN)' })
   create(@Body() createProductDto: CreateProductDto, @CurrentUser() user: any) {
@@ -53,9 +54,9 @@ export class ProductsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Lấy danh sách tất cả sản phẩm' })
-  findAll() {
-    return this.productsService.findAll();
+  @ApiOperation({ summary: 'Lấy danh sách sản phẩm có phân trang và sắp xếp' })
+  findAll(@Query() query: GetProductsDto) {
+    return this.productsService.findAll(query);
   }
 
   @Get(':id')

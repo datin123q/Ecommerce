@@ -1,29 +1,20 @@
-# --- STAGE 1: Build Môi trường Nháp ---
-FROM node:20-alpine AS builder
+# 1. Chọn môi trường Node.js
+FROM node:18-alpine
 
 WORKDIR /app
-RUN apk add --no-cache openssl build-base python3
 
-# Copy cả package.json và package-lock.json
+# 2. Cài đặt thư viện
 COPY package*.json ./
+RUN npm install
 
-# Cài đặt chính xác bằng Lockfile 
-RUN npm ci
-
+# 3. Copy toàn bộ code
 COPY . .
+
+# 4. Sinh mã Prisma (Không cần file .env giả nữa vì schema.prisma của bạn đã có URL)
 RUN npx prisma generate
 
+# 5. Build code
 RUN npm run build
 
-# --- STAGE 2: Môi trường Chạy thật (Production) ---
-FROM node:20-alpine
-WORKDIR /app
-RUN apk add --no-cache openssl
-
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
-
-EXPOSE 3000
-CMD ["sh", "-c", "npx prisma migrate deploy && npm run start:prod"]
+# 6. Khởi chạy
+CMD ["npm", "run", "start:prod"]

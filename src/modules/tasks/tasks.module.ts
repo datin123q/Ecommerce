@@ -6,7 +6,7 @@ import { MailProcessor } from '../../processor/mails.processor';
 import { BullModule } from '@nestjs/bullmq';
 
 @Module({
-    imports: [DatabaseModule, BullModule.registerQueue({name: 'mail-queue'}),],
+    imports: [DatabaseModule, BullModule.registerQueue({name: 'mail-queue'})],
     providers: [TasksService, MailProcessor],
     controllers: [TasksController],
 }) export class TasksModule{}
