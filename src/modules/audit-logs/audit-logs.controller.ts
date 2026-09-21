@@ -20,4 +20,10 @@ export class AuditLogsController {
   getAllLogs() {
     return this.auditLogsService.getLogs();
   }
+  @Get('server')
+  getServer() {
+    return {
+      hostname: process.env.HOSTNAME,
+    };
+  }
 }

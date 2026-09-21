@@ -149,7 +149,7 @@ export class ProductsService {
   async findAll(query: GetProductsDto) {
     const {
       page = 1,
-      limit = 10,
+      limit = 1,
       sortBy = 'name',
       sortOrder = 'asc',
     } = query;

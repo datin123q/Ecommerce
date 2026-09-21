@@ -113,8 +113,8 @@ async refresh(@Req() req: any) {
     const tokens = await this.authService.validateSocialLogin(request.user);
     const frontendUrl = 'http://localhost:5173';
     res.cookie('refresh_token', tokens.refreshToken, {
-      httpOnly: true, // Frontend JS không đọc được
-      secure: false,  // Set true nếu chạy HTTPS (production)
+      httpOnly: true, 
+      secure: false, 
       sameSite: 'lax', 
       maxAge: 7 * 24 * 60 * 60 * 1000, 
     });

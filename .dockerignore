@@ -1,7 +1,5 @@
-node_modules
-dist
 .git
 .env
-npm-debug.log
-postgres_data
-redis_data
+node_modules
+dist
+logs

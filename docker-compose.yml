@@ -1,7 +1,4 @@
-version: '3.8'
-
 services:
-  # --- HẠ TẦNG CỦA BẠN ---
   postgres:
     image: postgres:16-alpine
     container_name: commerce_core_postgres
@@ -11,7 +8,7 @@ services:
       POSTGRES_PASSWORD: rootpassword
       POSTGRES_DB: commerce_core_db
     ports:
-      - '5432:5432'
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
@@ -20,41 +17,43 @@ services:
     container_name: commerce_core_redis
     restart: always
     ports:
-      - '6379:6379'
+      - "6379:6379"
     volumes:
       - redis_data:/data
 
-  # --- HỆ THỐNG SCALE OUT ---
-  
-  # 1. Load Balancer (Đứng ngoài cùng)
   nginx:
     image: nginx:alpine
     ports:
-      - '80:80'
+      - "80:80"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf
     depends_on:
       - api_1
       - api_2
 
-  # 2. NestJS Instance 1
   api_1:
     build: .
     restart: always
+    env_file:
+      - .env
     environment:
-      # Sửa localhost thành tên service (postgres và redis)
       DATABASE_URL: postgresql://root:rootpassword@postgres:5432/commerce_core_db?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       REDIS_URL: redis://redis:6379
     depends_on:
       - postgres
       - redis
 
-  # 3. NestJS Instance 2
   api_2:
     build: .
     restart: always
+    env_file:
+      - .env
     environment:
       DATABASE_URL: postgresql://root:rootpassword@postgres:5432/commerce_core_db?schema=public
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       REDIS_URL: redis://redis:6379
     depends_on:
       - postgres
@@ -62,6 +61,4 @@ services:
 
 volumes:
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
