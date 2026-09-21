@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { UpdateProfileDto } from './dto/user-update.dto';
 import * as argon2 from 'argon2';
 import { Role } from '@prisma/client';
+
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
