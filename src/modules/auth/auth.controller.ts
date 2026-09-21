@@ -6,10 +6,10 @@ import {
   UseGuards,
   Req,
   Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyAccountDto } from './dto/verify-account.dto';
@@ -19,7 +19,6 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Throttle } from '@nestjs/throttler';
 import { AuthGuard } from '@nestjs/passport';
-import { type Response } from 'express';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -37,13 +36,14 @@ export class AuthController {
   @ApiOperation({ summary: 'Đăng nhập hệ thống' })
   async login(
     @Body() loginDto: LoginDto,
-    @Res({ passthrough: true }) res: Response,
+    @Res({ passthrough: true }) res: any,
   ) {
     const tokens = await this.authService.login(loginDto);
     res.cookie('refresh_token', tokens.refreshToken, {
       httpOnly: true,
       secure: false,
       sameSite: 'lax',
+      path: '/api/v1/auth/refresh',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
@@ -67,19 +67,38 @@ export class AuthController {
     };
   }
   
-  @Post('refresh')
-  @ApiOperation({ summary: 'Cấp lại Access Token mới (Dùng Refresh Token)' })
-  async refresh(@Body() body: RefreshTokenDto) {
-    return this.authService.refreshToken(body.refreshToken);
+@Post('refresh')
+@ApiOperation({ summary: 'Cấp lại Access Token mới' })
+async refresh(@Req() req: any) {
+  const refreshToken = req.cookies?.refresh_token;
+
+  if (!refreshToken) {
+    throw new UnauthorizedException('Không tìm thấy refresh token');
   }
+
+  return this.authService.refreshToken(refreshToken);
+}
 
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth() 
   @ApiOperation({ summary: 'Đăng xuất tài khoản' })
-  async logout(@Req() request: any) {
+  async logout(
+    @Req() request: any,
+    @Res({ passthrough: true }) res: any ,
+  ) {
     const userId = request.user.id; 
-    return this.authService.logout(userId);
+    
+    await this.authService.logout(userId);
+
+    res.clearCookie('refresh_token', {
+      path: '/api/v1/auth/refresh',
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+    });
+
+    return { message: 'Đăng xuất thành công' };
   }
 
   @Get('google')
@@ -90,8 +109,8 @@ export class AuthController {
 
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
-  async googleAuthRedirect(@Req() request: any, @Res() res: Response) { 
-    const tokens = await this.authService.validateSocialLogin(request.user as any);
+  async googleAuthRedirect(@Req() request: any, @Res() res: any) { 
+    const tokens = await this.authService.validateSocialLogin(request.user);
     const frontendUrl = 'http://localhost:5173';
     res.cookie('refresh_token', tokens.refreshToken, {
       httpOnly: true, // Frontend JS không đọc được
@@ -99,7 +118,6 @@ export class AuthController {
       sameSite: 'lax', 
       maxAge: 7 * 24 * 60 * 60 * 1000, 
     });
-    console.log(tokens.accessToken);
     return res.redirect(
       `${frontendUrl}/login-success?accessToken=${tokens.accessToken}`
     );
@@ -114,7 +132,7 @@ export class AuthController {
   @Get('facebook/callback')
   @UseGuards(AuthGuard('facebook'))
   async facebookAuthRedirect(@Req() request: any) { 
-    const tokens = await this.authService.validateSocialLogin(request.user as any);
+    const tokens = await this.authService.validateSocialLogin(request.user);
     return {
       message: 'Đăng nhập Facebook thành công!',
       data: tokens
@@ -130,7 +148,7 @@ export class AuthController {
   @Get('twitter/callback')
   @UseGuards(AuthGuard('twitter'))
   async twitterAuthRedirect(@Req() request: any) { 
-    const tokens = await this.authService.validateSocialLogin(request.user as any);
+    const tokens = await this.authService.validateSocialLogin(request.user);
     return {
       message: 'Đăng nhập X thành công!',
       data: tokens

@@ -22,9 +22,13 @@ import { RedisModule } from './redis/redis.module';
 import { AppLoggerMiddleware } from './common/middlewares/app-logger.middleware';
 import {ScheduleModule} from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { APP_GUARD } from '@nestjs/core';
 import { MailerModule} from '@nestjs-modules/mailer';
 import { envValidationSchema } from './config/env.validation';
+import { GraphQLModule } from '@nestjs/graphql';
+import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
+import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
 
 
 @Module({
@@ -49,7 +53,7 @@ import { envValidationSchema } from './config/env.validation';
     }),
     BullModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
+      useFactory: (configService: ConfigService) => ({
         connection: {
           host: configService.get<string>('REDIS_HOST') || 'localhost',
           port: configService.get<number>('REDIS_PORT') || 6379,
@@ -57,10 +61,29 @@ import { envValidationSchema } from './config/env.validation';
       }),
       inject: [ConfigService],
     }),
-    ThrottlerModule.forRoot([
-      { name: 'short', ttl: 1000, limit: 3 },    
-      { name: 'long', ttl: 60000, limit: 100 },  
-    ]),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+
+      useFactory: (configService: ConfigService) => ({
+        throttlers: [
+          {
+            name: 'short',
+            ttl: 1000,
+            limit: 3,
+          },
+          {
+            name: 'long',
+            ttl: 60000,
+            limit: 100,
+          },
+        ],
+
+        storage: new ThrottlerStorageRedisService(
+          `redis://${configService.get<string>('REDIS_HOST') || 'localhost'}:${configService.get<number>('REDIS_PORT') || 6379}`,
+        ),
+      }),
+    }),
     MailerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -78,6 +101,13 @@ import { envValidationSchema } from './config/env.validation';
           from: configService.get<string>('MAIL_FROM'),
         },
       }),
+    }),
+    
+    GraphQLModule.forRoot<ApolloDriverConfig>({
+      driver: ApolloDriver,
+      autoSchemaFile: true,
+      playground: false, 
+      plugins: [ApolloServerPluginLandingPageLocalDefault() as any],
     }),
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),

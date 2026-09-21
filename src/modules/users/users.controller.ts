@@ -18,8 +18,8 @@ export class UsersController {
   constructor(private readonly usersService: UsersService ,private readonly configService: ConfigService) {}
 
   @Patch('me')
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
+  // @UseGuards(JwtAuthGuard)
+  // @ApiBearerAuth()
   @ApiOperation({ summary: 'Cập nhật Tên và Mật khẩu (Mọi User)' })
   updateProfile(
     @CurrentUser() user: any,

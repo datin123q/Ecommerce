@@ -47,7 +47,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
       cacheKey, 
       JSON.stringify(recordMetadata), 
       'PX', 
-      86400000, // 24 giờ
+      86400000, 
       'NX'
     );
 
