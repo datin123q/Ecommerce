@@ -12,10 +12,16 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: Role;
+}
+
 @ApiTags('Inventory (Kho hàng)')
 @Controller('inventory')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN) // Đưa lên cấp Controller cho gọn
+@Roles(Role.WAREHOUSE_MANAGER, Role.ADMIN) 
 @ApiBearerAuth()
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
@@ -24,7 +30,7 @@ export class InventoryController {
 
   @Post('warehouses')
   @ApiOperation({ summary: 'Tạo kho hàng mới (Chỉ WAREHOUSE_MANAGER/ADMIN)' })
-  createWarehouse(@Body() createWarehouseDto: CreateWarehouseDto, @CurrentUser() user: any) {
+  createWarehouse(@Body() createWarehouseDto: CreateWarehouseDto, @CurrentUser() user: AuthenticatedUser) {
     return this.inventoryService.createWarehouse(createWarehouseDto, user.id);
   }
 
@@ -42,13 +48,13 @@ export class InventoryController {
 
   @Patch('warehouses/:id')
   @ApiOperation({ summary: 'Cập nhật thông tin kho' })
-  update(@Param('id') id: string, @Body() updateWarehouseDto: UpdateWarehouseDto, @CurrentUser() user: any) {
+  update(@Param('id') id: string, @Body() updateWarehouseDto: UpdateWarehouseDto, @CurrentUser() user: AuthenticatedUser) {
     return this.inventoryService.update(id, updateWarehouseDto, user.id);
   }
 
   @Delete('warehouses/:id')
   @ApiOperation({ summary: 'Xóa kho' })
-  remove(@Param('id') id: string, @CurrentUser() user: any) {
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.inventoryService.remove(id, user.id);
   }
 
@@ -56,13 +62,13 @@ export class InventoryController {
 
   @Post('stock-in')
   @ApiOperation({ summary: 'Nhập hàng vào kho' })
-  stockIn(@CurrentUser() user: any, @Body() stockInDto: StockInDto) {
+  stockIn(@CurrentUser() user: AuthenticatedUser, @Body() stockInDto: StockInDto) {
     return this.inventoryService.stockIn(user.id, stockInDto);
   }
 
   @Post('stock-out')
   @ApiOperation({ summary: 'Xuất hàng khỏi kho' })
-  stockOut(@CurrentUser() user: any, @Body() stockOutDto: StockOutDto) {
+  stockOut(@CurrentUser() user: AuthenticatedUser, @Body() stockOutDto: StockOutDto) {
     return this.inventoryService.stockOut(user.id, stockOutDto);
   }
 

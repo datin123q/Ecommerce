@@ -3,6 +3,11 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Profile, Strategy } from 'passport-facebook';
 import { ConfigService } from '@nestjs/config';
 
+type SocialVerifyCallback = (
+  error: Error | null,
+  user?: object | false,
+  info?: object,
+) => void;
 @Injectable()
 export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
   constructor(private configService: ConfigService) {
@@ -15,7 +20,7 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
     });
   }
 
-  async validate(accessToken: string, refreshToken: string, profile: Profile, done: any) {
+  async validate(accessToken: string, refreshToken: string, profile: Profile, done: SocialVerifyCallback) {
     const { name, emails, photos } = profile;
     console.log(profile);
     if(name){

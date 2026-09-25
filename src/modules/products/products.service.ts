@@ -70,7 +70,7 @@ export class ProductsService {
       await this.invalidateProductCaches(newProduct.id, newProduct.categoryId);
       
       return newProduct;
-    } catch (error: any) {
+    } catch (error) {
       if (error.code === 'P2002') {
         throw new ConflictException('Mã SKU của biến thể đã tồn tại, vui lòng kiểm tra lại!');
       }
@@ -119,7 +119,7 @@ export class ProductsService {
 
       await this.invalidateProductCaches(productId, undefined, newVariant.id);
       return newVariant;
-    } catch (error: any) {
+    } catch (error) {
       if (error.code === 'P2002') throw new ConflictException('Mã SKU của biến thể này đã tồn tại!');
       throw error;
     }

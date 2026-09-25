@@ -8,17 +8,39 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
+import { AuthGuard } from '@nestjs/passport';
+import { Role } from '@prisma/client';
+import type { Request, Response } from 'express';
+
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { VerifyAccountDto } from './dto/verify-account.dto';
 import { LoginDto } from './dto/login.dto';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard'; 
+
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Throttle } from '@nestjs/throttler';
-import { AuthGuard } from '@nestjs/passport';
+
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: Role;
+}
+
+interface SocialUser {
+  email: string;
+  fullName: string;
+  provider: string;
+  providerId: string;
+  avatar: string;
+}
+
+interface SocialAuthRequest extends Request {
+  user: SocialUser;
+}
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -36,9 +58,10 @@ export class AuthController {
   @ApiOperation({ summary: 'Đăng nhập hệ thống' })
   async login(
     @Body() loginDto: LoginDto,
-    @Res({ passthrough: true }) res: any,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const tokens = await this.authService.login(loginDto);
+
     res.cookie('refresh_token', tokens.refreshToken, {
       httpOnly: true,
       secure: false,
@@ -60,42 +83,36 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Lấy thông tin tài khoản đang đăng nhập' })
-  getProfile(@CurrentUser() user: any) {
+  getProfile(@CurrentUser() user: AuthenticatedUser) {
     return {
       message: 'Lấy thông tin thành công',
-      user: user,
+      user,
     };
   }
-  
-@Post('refresh')
-@ApiOperation({ summary: 'Cấp lại Access Token mới' })
-async refresh(@Req() req: any) {
 
-  const refreshToken =
-    req.cookies?.refresh_token;
+  @Post('refresh')
+  @ApiOperation({ summary: 'Cấp lại Access Token mới' })
+  async refresh(@Req() req: Request) {
+    const refreshToken = req.cookies?.refresh_token;
 
-  if (!refreshToken) {
-    throw new UnauthorizedException(
-      'Không tìm thấy refresh token'
-    );
+    if (!refreshToken) {
+      throw new UnauthorizedException(
+        'Không tìm thấy refresh token',
+      );
+    }
+
+    return this.authService.refreshToken(refreshToken);
   }
-
-  return this.authService.refreshToken(
-    refreshToken
-  );
-}
 
   @Post('logout')
   @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth() 
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Đăng xuất tài khoản' })
   async logout(
-    @Req() request: any,
-    @Res({ passthrough: true }) res: any ,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    const userId = request.user.id; 
-    
-    await this.authService.logout(userId);
+    await this.authService.logout(user.id);
 
     res.clearCookie('refresh_token', {
       path: '/api/v1/auth/refresh',
@@ -104,61 +121,77 @@ async refresh(@Req() req: any) {
       sameSite: 'lax',
     });
 
-    return { message: 'Đăng xuất thành công' };
+    return {
+      message: 'Đăng xuất thành công',
+    };
   }
 
   @Get('google')
   @UseGuards(AuthGuard('google'))
-  @ApiOperation({ summary: 'Đăng nhập google' })
-  async googleAuth() {
-  }
+  @ApiOperation({ summary: 'Đăng nhập Google' })
+  googleAuth() {}
 
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
-  async googleAuthRedirect(@Req() request: any, @Res() res: any) { 
-    const tokens = await this.authService.validateSocialLogin(request.user);
+  async googleAuthRedirect(
+    @Req() request: SocialAuthRequest,
+    @Res() res: Response,
+  ) {
+    const tokens = await this.authService.validateSocialLogin(
+      request.user,
+    );
+
     const frontendUrl = 'http://localhost:5173';
+
     res.cookie('refresh_token', tokens.refreshToken, {
-      httpOnly: true, 
-      secure: false, 
-      sameSite: 'lax', 
-      maxAge: 7 * 24 * 60 * 60 * 1000, 
+      httpOnly: true,
+      secure: false,
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-    console.log(tokens.accessToken);
+
     return res.redirect(
-      `${frontendUrl}/login-success?accessToken=${tokens.accessToken}`
+      `${frontendUrl}/login-success?accessToken=${tokens.accessToken}`,
     );
   }
 
   @Get('facebook')
   @UseGuards(AuthGuard('facebook'))
-  @ApiOperation({ summary: 'Đăng nhập facebook' })
-  async facebookAuth() {
-  }
+  @ApiOperation({ summary: 'Đăng nhập Facebook' })
+  facebookAuth() {}
 
   @Get('facebook/callback')
   @UseGuards(AuthGuard('facebook'))
-  async facebookAuthRedirect(@Req() request: any) { 
-    const tokens = await this.authService.validateSocialLogin(request.user);
+  async facebookAuthRedirect(
+    @Req() request: SocialAuthRequest,
+  ) {
+    const tokens = await this.authService.validateSocialLogin(
+      request.user,
+    );
+
     return {
       message: 'Đăng nhập Facebook thành công!',
-      data: tokens
+      data: tokens,
     };
   }
 
   @Get('twitter')
   @UseGuards(AuthGuard('twitter'))
   @ApiOperation({ summary: 'Đăng nhập X' })
-  async twitterAuth() {
-  }
+  twitterAuth() {}
 
   @Get('twitter/callback')
   @UseGuards(AuthGuard('twitter'))
-  async twitterAuthRedirect(@Req() request: any) { 
-    const tokens = await this.authService.validateSocialLogin(request.user);
+  async twitterAuthRedirect(
+    @Req() request: SocialAuthRequest,
+  ) {
+    const tokens = await this.authService.validateSocialLogin(
+      request.user,
+    );
+
     return {
       message: 'Đăng nhập X thành công!',
-      data: tokens
+      data: tokens,
     };
   }
 
@@ -171,23 +204,25 @@ async refresh(@Req() req: any) {
   @Post('reset-password')
   @ApiOperation({ summary: 'Đặt lại mật khẩu bằng Token' })
   resetPassword(@Body() dto: ResetPasswordDto) {
-    return this.authService.resetPassword(dto.token, dto.newPassword);
+    return this.authService.resetPassword(
+      dto.token,
+      dto.newPassword,
+    );
   }
 
   @Post('verify-user')
-  @UseGuards(JwtAuthGuard) 
-  @ApiBearerAuth() 
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @ApiOperation({ summary: 'Gửi link xác thực qua email' })
-  userVerified( @CurrentUser() user: any) {
+  userVerified(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.requestVerification(user.id);
   }
 
   @Post('verify-account')
-  @UseGuards(JwtAuthGuard) 
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Xác thực tài khoản bằng Token' })
   verifyAccount(@Body() dto: VerifyAccountDto) {
     return this.authService.verifyAccount(dto.token);
   }
-  
 }

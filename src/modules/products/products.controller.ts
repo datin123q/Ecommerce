@@ -13,6 +13,12 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import { GetProductsDto } from './dto/get-products.dto';
 
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: Role;
+}
+
 @ApiTags('Products (Sản phẩm)')
 @Controller('products')
 export class ProductsController {
@@ -23,7 +29,7 @@ export class ProductsController {
   @Roles(Role.ADMIN) 
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Tạo sản phẩm & Biến thể cùng lúc (Chỉ ADMIN)' })
-  create(@Body() createProductDto: CreateProductDto, @CurrentUser() user: any) {
+  create(@Body() createProductDto: CreateProductDto, @CurrentUser() user: AuthenticatedUser) {
     return this.productsService.create(createProductDto, user.id);
   }
 
@@ -35,7 +41,7 @@ export class ProductsController {
   updateProduct(
       @Param('id') id: string, 
       @Body() updateProductDto: UpdateProductDto,
-      @CurrentUser() user: any 
+      @CurrentUser() user: AuthenticatedUser 
     ) {
       return this.productsService.updateProduct(id, updateProductDto, user.id);
     }
@@ -48,7 +54,7 @@ export class ProductsController {
   addVariant(
     @Param('id') productId: string,
     @Body() createVariantDto: CreateProductVariantDto,
-    @CurrentUser() user: any
+    @CurrentUser() user: AuthenticatedUser
   ) {
     return this.productsService.addVariant(productId, createVariantDto, user.id);
   }
@@ -70,7 +76,7 @@ export class ProductsController {
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Xóa sản phẩm (Chỉ ADMIN)' })
-  remove(@Param('id') id: string, @CurrentUser() user: any) {
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.productsService.remove(id, user.id);
   }
 
@@ -82,7 +88,7 @@ export class ProductsController {
   updateVariant(
     @Param('id') id: string,
     @Body() updateProductVariantDto: UpdateProductVariantDto,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.productsService.updateVariant(id, updateProductVariantDto, user.id);
   }
@@ -93,12 +99,4 @@ export class ProductsController {
     return this.productsService.findOneVariant(id);
   }
 
-  // @Delete('variants/:id')
-  // @UseGuards(JwtAuthGuard, RolesGuard)
-  // @Roles(Role.ADMIN)
-  // @ApiBearerAuth()
-  // @ApiOperation({ summary: 'Xóa biến thể (Chỉ ADMIN)' })
-  // removeVariant(@Param('id') id: string, @CurrentUser() user: any) {
-  //   return this.productsService.removeVariant(id, user.id);
-  // }
 }

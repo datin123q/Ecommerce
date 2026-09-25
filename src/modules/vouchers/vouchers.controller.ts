@@ -10,6 +10,12 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: Role;
+}
+
 @ApiTags('Vouchers (Khuyến mãi)')
 @Controller('vouchers')
 export class VouchersController {
@@ -20,7 +26,7 @@ export class VouchersController {
   @Roles(Role.ADMIN) 
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Tạo mã giảm giá mới (Chỉ ADMIN)' })
-  create(@Body() createVoucherDto: CreateVoucherDto, @CurrentUser() user: any) {
+  create(@Body() createVoucherDto: CreateVoucherDto, @CurrentUser() user: AuthenticatedUser) {
     return this.vouchersService.create(createVoucherDto, user.id );
   }
 
@@ -41,7 +47,7 @@ export class VouchersController {
   updateProduct(
       @Param('id') id: string, 
       @Body() updateVoucherDto: UpdateVoucherDto,
-      @CurrentUser() user: any 
+      @CurrentUser() user: AuthenticatedUser 
     ) {
       return this.vouchersService.updateVoucher(id, updateVoucherDto, user.id);
     }
@@ -52,7 +58,7 @@ export class VouchersController {
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Xóa voucher (Chỉ ADMIN)' })
-  remove(@Param('id') id: string, @CurrentUser() user: any) {
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.vouchersService.remove(id, user.id);
   }
 

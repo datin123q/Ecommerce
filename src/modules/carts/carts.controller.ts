@@ -4,6 +4,13 @@ import { AddToCartDto } from './dto/add-to-cart.dto';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Role } from '@prisma/client';
+
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: Role;
+}
 
 @ApiTags('Carts (Giỏ hàng)')
 @Controller('carts')
@@ -14,19 +21,19 @@ export class CartsController {
 
   @Get('my-cart')
   @ApiOperation({ summary: 'Xem giỏ hàng của tôi(Phải đăng nhập)' })
-  getMyCart(@CurrentUser() user: any) {
+  getMyCart(@CurrentUser() user: AuthenticatedUser) {
     return this.cartsService.getMyCart(user.id);
   }
 
   @Post('add')
   @ApiOperation({ summary: 'Thêm sản phẩm vào giỏ hàng(Phải đăng nhập)' })
-  addToCart(@CurrentUser() user: any, @Body() addToCartDto: AddToCartDto) {
+  addToCart(@CurrentUser() user: AuthenticatedUser, @Body() addToCartDto: AddToCartDto) {
     return this.cartsService.addToCart(user.id, addToCartDto);
   }
 
   @Delete('items/:id')
   @ApiOperation({ summary: 'Xóa một mặt hàng khỏi giỏ(Phải đăng nhập)' })
-  removeCartItem(@CurrentUser() user: any, @Param('id') cartItemId: string) {
+  removeCartItem(@CurrentUser() user: AuthenticatedUser, @Param('id') cartItemId: string) {
     return this.cartsService.removeCartItem(user.id, cartItemId);
   }
 }

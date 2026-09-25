@@ -12,6 +12,12 @@ import { Role } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ConfigService } from '@nestjs/config';
 
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: Role;
+}
+
 @ApiTags('Users (Người dùng)')
 @Controller('users')
 export class UsersController {
@@ -22,7 +28,7 @@ export class UsersController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Cập nhật Tên và Mật khẩu (Mọi User)' })
   updateProfile(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() updateProfileDto: UpdateProfileDto
   ) {
     return this.usersService.updateProfile(user.id, updateProfileDto);
@@ -87,7 +93,7 @@ export class UsersController {
   })
   async updateAvatar(
     @Body('avatarUrl') avatarUrl: string,
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
     if (!avatarUrl) {
       throw new BadRequestException('Vui lòng cung cấp URL ảnh (avatarUrl)');

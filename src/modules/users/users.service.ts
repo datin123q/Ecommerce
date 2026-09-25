@@ -71,7 +71,7 @@ export class UsersService {
     const userExists = await this.prisma.db.user.findUnique({ where: { id: userId } });
     if (!userExists) throw new NotFoundException('Không tìm thấy tài khoản');
 
-    const dataToUpdate: any = {};
+    const dataToUpdate:  Prisma.UserUpdateInput = {}; 
 
     if (dto.fullName) {
       dataToUpdate.fullName = dto.fullName;

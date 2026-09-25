@@ -3,6 +3,12 @@ import { PassportStrategy } from '@nestjs/passport';
 import { Profile, Strategy } from 'passport-twitter';
 import { ConfigService } from '@nestjs/config';
 
+type SocialVerifyCallback = (
+  error: Error | null,
+  user?: object | false,
+  info?: object,
+) => void;
+
 @Injectable()
 export class TwitterStrategy extends PassportStrategy(Strategy, 'twitter') {
   constructor(private configService: ConfigService) {
@@ -14,7 +20,7 @@ export class TwitterStrategy extends PassportStrategy(Strategy, 'twitter') {
     });
   }
 
-  async validate(accessToken: string, refreshToken: string, profile: Profile, done: any) {
+  async validate(accessToken: string, refreshToken: string, profile: Profile, done: SocialVerifyCallback) {
     console.log(profile);
     const user = {
       email: profile.emails && profile.emails[0] ? profile.emails[0].value : null,

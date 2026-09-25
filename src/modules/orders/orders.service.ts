@@ -12,6 +12,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { VouchersService } from '../vouchers/vouchers.service';
 import { CartsService } from '../carts/carts.service';
 
+
 export type CartWithItems = Prisma.CartGetPayload<{
   include: { cartItems: { include: { variant: { include: { product: true } } } } }
 }>;

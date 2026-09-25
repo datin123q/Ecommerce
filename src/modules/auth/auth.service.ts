@@ -10,11 +10,16 @@ import { User } from '@prisma/client';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
 import { JwtSignOptions } from '@nestjs/jwt';
-// Đưa các hằng số cấu hình hệ thống ra bên ngoài (Tránh Magic Numbers)
+
 const TOKEN_EXPIRATION_MS = 15 * 60 * 1000; // 15 phút
 const MAIL_QUEUE_NAME = 'mail-queue';
 const JOB_VERIFY_ACCOUNT = 'verify-account';
 const JOB_FORGOT_PASSWORD = 'forgot-password';
+interface JwtPayload {
+  sub: string;
+  email: string;
+  role: User['role'];
+}
 
 @Injectable()
 export class AuthService {
@@ -163,9 +168,9 @@ export class AuthService {
   }
 
   async refreshToken(providedRefreshToken: string) {
-    let payload: any;
+    let payload: JwtPayload;
     try {
-      payload = await this.jwtService.verifyAsync(providedRefreshToken, {
+      payload = await this.jwtService.verifyAsync<JwtPayload>(providedRefreshToken, {
         secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
       });
     } catch {

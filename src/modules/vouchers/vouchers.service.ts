@@ -116,7 +116,7 @@ export class VouchersService {
     }
   }
 
-  private postAuditEvent(eventName: string, actorId: string, action: string, entityId: string, oldValue: any, newValue: any) {
+  private postAuditEvent(eventName: string, actorId: string, action: string, entityId: string, oldValue: unknown, newValue: unknown) {
     this.eventEmitter.emit(eventName, {
       actorId,
       action,

@@ -8,7 +8,7 @@ export class RedisCacheService{
 
     async get<T>(key: string): Promise<T | null> {
         const data = await this.redisClient.get(key);
-        if (!data) return null;
+        if (data === null) return null;
         try {
         return JSON.parse(data) as T;
         } catch (e) {

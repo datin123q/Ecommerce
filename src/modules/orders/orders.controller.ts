@@ -6,10 +6,16 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
 import { ApiHeader } from '@nestjs/swagger';
+import { Role } from '@prisma/client';
 
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: Role;
+}
 @ApiTags('Orders (Đơn hàng)')
 @Controller('orders')
-@UseGuards(JwtAuthGuard) // Bắt buộc đăng nhập
+@UseGuards(JwtAuthGuard) 
 @ApiBearerAuth()
 export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
@@ -21,13 +27,13 @@ export class OrdersController {
     })
   @UseInterceptors(IdempotencyInterceptor)
   @ApiOperation({ summary: 'Chốt đơn từ Giỏ hàng (Có thể kèm Voucher)' })
-  createOrder(@CurrentUser() user: any, @Body() createOrderDto: CreateOrderDto) {
+  createOrder(@CurrentUser() user: AuthenticatedUser, @Body() createOrderDto: CreateOrderDto) {
     return this.ordersService.createOrder(user.id, createOrderDto);
   }
 
   @Get('my-orders')
   @ApiOperation({ summary: 'Xem lịch sử đơn hàng của tôi' })
-  getMyOrders(@CurrentUser() user: any) {
+  getMyOrders(@CurrentUser() user: AuthenticatedUser) {
     return this.ordersService.getMyOrders(user.id);
   }
 
@@ -45,7 +51,7 @@ export class OrdersController {
     })
     @UseInterceptors(IdempotencyInterceptor)
   async cancelOrder(
-    @Param('id') orderId: string, @CurrentUser() user: any
+    @Param('id') orderId: string, @CurrentUser() user: AuthenticatedUser
   ) {
     return this.ordersService.cancelOrder(user.id, orderId);
   }

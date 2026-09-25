@@ -3,7 +3,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { UsersModule } from '../users/users.module';
 import { DatabaseModule } from '../../database/database.module'
-import { JwtModule } from '@nestjs/jwt';
+import { JwtModule, JwtSignOptions } from '@nestjs/jwt';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { ConfigModule, ConfigService } from '@nestjs/config'; 
 import { GoogleStrategy } from './strategies/google.strategy';
@@ -22,7 +22,7 @@ import { IsEmailUniqueConstraint } from '../../validator/is-email-unique.validat
       useFactory: async (configService: ConfigService) => ({
         secret: configService.getOrThrow<string>('JWT_ACCESS_SECRET'),
         signOptions: { 
-          expiresIn: (configService.get<string>('JWT_ACCESS_EXPIRES_IN') || '15m' ) as any
+          expiresIn: (configService.get<string>('JWT_ACCESS_EXPIRES_IN') || '15m' ) as JwtSignOptions['expiresIn']
         },
       }),
     }),

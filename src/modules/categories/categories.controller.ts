@@ -10,6 +10,12 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '@prisma/client'; 
 
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: Role;
+}
+
 @ApiTags('Categories (Danh mục)')
 @Controller('categories')
 export class CategoriesController {
@@ -21,7 +27,7 @@ export class CategoriesController {
   @Roles(Role.ADMIN)                   
   @ApiBearerAuth()                    
   @ApiOperation({ summary: 'Tạo danh mục mới (Chỉ ADMIN)' })
-  create(@Body() createCategoryDto: CreateCategoryDto, @CurrentUser() user: any) {
+  create(@Body() createCategoryDto: CreateCategoryDto, @CurrentUser() user: AuthenticatedUser) {
     return this.categoriesService.create(createCategoryDto, user.id);
   }
 
@@ -44,7 +50,7 @@ export class CategoriesController {
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Cập nhật danh mục (Chỉ ADMIN)' })
-  update(@Param('id') id: string, @Body() updateCategoryDto: UpdateCategoryDto, @CurrentUser() user: any) {
+  update(@Param('id') id: string, @Body() updateCategoryDto: UpdateCategoryDto, @CurrentUser() user: AuthenticatedUser) {
     return this.categoriesService.update(id, updateCategoryDto, user.id);
   }
 
@@ -54,7 +60,7 @@ export class CategoriesController {
   @Roles(Role.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Xóa danh mục (Chỉ ADMIN)' })
-  remove(@Param('id') id: string, @CurrentUser() user: any) {
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.categoriesService.remove(id, user.id);
   }
 }

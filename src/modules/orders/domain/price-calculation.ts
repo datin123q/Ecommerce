@@ -1,8 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
+import type { CartWithItems } from '../orders.service';
 
 export class PriceCalculation {
   static calculate(
-    cartItems: any[],
+    cartItems: CartWithItems['cartItems'],
     voucher?: { id: string; value: number; limit: number; count: number } | null
   ) {
     let totalAmount = 0;

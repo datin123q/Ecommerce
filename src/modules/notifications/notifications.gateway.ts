@@ -26,7 +26,7 @@ export class NotificationsGateway implements OnGatewayConnection, OnGatewayDisco
   handleDisconnect(client: Socket) {
     this.logger.log(`❌ Client disconnected: ${client.id}`);
   }
-  sendToUser(userId: string, eventName: string, payload: any) {
+  sendToUser(userId: string, eventName: string, payload: unknown) {
     this.server.to(userId).emit(eventName, payload);
   }
 }

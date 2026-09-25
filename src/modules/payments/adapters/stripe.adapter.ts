@@ -32,7 +32,7 @@ export class StripeAdapter implements IPaymentProvider {
   verifyWebhookEvent(payload: Buffer, signature: string): Stripe.Event {
     try {
       return this.stripe.webhooks.constructEvent(payload, signature, this.webhookSecret);
-    } catch (err: any) {
+    } catch (err) {
       throw new BadRequestException(`Webhook Error: ${err.message}`);
     }
   }

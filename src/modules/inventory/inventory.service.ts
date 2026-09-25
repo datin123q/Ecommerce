@@ -216,8 +216,8 @@ export class InventoryService {
     action: string, 
     entity: string, 
     entityId: string, 
-    oldValue: any, 
-    newValue: any
+    oldValue: unknown, 
+    newValue: unknown,
   ) {
     this.eventEmitter.emit(eventName, {         
       actorId,

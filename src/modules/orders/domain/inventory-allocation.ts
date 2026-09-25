@@ -1,7 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
+import type { Inventory } from '@prisma/client';
+import type { CartWithItems } from '../orders.service';
 
 export class InventoryAllocation {
-  static allocate(cartItems: any[], inventories: any[]) {
+  static allocate(cartItems: CartWithItems['cartItems'], inventories: Inventory[]) {
     const stockMap = new Map<string, number>();
     for (const inv of inventories) {
       const currentTotal = stockMap.get(inv.variantId) || 0;
