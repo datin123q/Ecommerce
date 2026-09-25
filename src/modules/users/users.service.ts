@@ -102,4 +102,21 @@ export class UsersService {
       data: { role },
     });
   }
+  async findByValidVerifyToken(hashedToken: string) {
+    return this.prisma.db.user.findFirst({
+      where: {
+        verifyToken: hashedToken,
+        verifyExpires: { gt: new Date() },
+      },
+    });
+  }
+
+  async findByValidResetToken(hashedToken: string) {
+    return this.prisma.db.user.findFirst({
+      where: {
+        resetPasswordToken: hashedToken,
+        resetPasswordExpires: { gt: new Date() },
+      },
+    });
+  }
 }

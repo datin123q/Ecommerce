@@ -8,53 +8,67 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 
-@Catch() 
+interface ExceptionResponse {
+  message?: string | string[];
+  errorCode?: string;
+}
+
+function isExceptionResponse(value: unknown): value is ExceptionResponse {
+  return typeof value === 'object' && value !== null;
+}
+
+@Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
+
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
-    // 1. Phân loại lỗi và Status Code
     const status =
       exception instanceof HttpException
         ? exception.getStatus()
         : HttpStatus.INTERNAL_SERVER_ERROR;
 
-    const exceptionResponse =
-      exception instanceof HttpException
-        ? exception.getResponse()
-        : null;
+    const exceptionResponse = exception instanceof HttpException
+      ? exception.getResponse()
+      : null;
 
     let message = 'Lỗi hệ thống nội bộ, vui lòng thử lại sau!';
-    if (exceptionResponse && typeof exceptionResponse === 'object' && 'message' in exceptionResponse) {
-      const msg = (exceptionResponse as any).message;
-      message = Array.isArray(msg) ? msg.join(', ') : msg;
+
+    if (isExceptionResponse(exceptionResponse)) {
+      const msg = exceptionResponse.message;
+
+      if (msg !== undefined) {
+        message = Array.isArray(msg)
+          ? msg.join(', ')
+          : msg;
+      }
     } else if (exception instanceof Error) {
       if (status !== HttpStatus.INTERNAL_SERVER_ERROR) {
         message = exception.message;
       }
     }
 
-    // 3. errorCode 
-    const errorCode = 
-      exceptionResponse && typeof exceptionResponse === 'object' && 'errorCode' in exceptionResponse
-        ? (exceptionResponse as any).errorCode 
+    const errorCode =
+      isExceptionResponse(exceptionResponse) &&
+      exceptionResponse.errorCode
+        ? exceptionResponse.errorCode
         : `ERR_${status}`;
 
-    // 4. Ghi Log chi tiết 
     this.logger.error(
       `[${request.method}] ${request.url} - Status: ${status} - Message: ${message}`,
-      exception instanceof Error ? exception.stack : 'Unknown Error',
+      exception instanceof Error
+        ? exception.stack
+        : 'Unknown Error',
     );
 
-    // 5. Format 
     response.status(status).json({
-      success: false,         
-      errorCode: errorCode,   
-      message: message,       
+      success: false,
+      errorCode,
+      message,
       path: request.url,
       timestamp: new Date().toISOString(),
     });

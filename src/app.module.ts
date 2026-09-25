@@ -26,10 +26,7 @@ import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis'
 import { APP_GUARD } from '@nestjs/core';
 import { MailerModule} from '@nestjs-modules/mailer';
 import { envValidationSchema } from './config/env.validation';
-import { GraphQLModule } from '@nestjs/graphql';
-import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
-import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin/landingPage/default';
-
+import { ProcessorModule } from './processor/processor.module';
 
 @Module({
   imports: [
@@ -90,7 +87,7 @@ import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin
       useFactory: (configService: ConfigService) => ({
         transport: {
           host: configService.get<string>('MAIL_HOST'),
-          port: configService.get<string>('MAIL_PORT'),
+          port: configService.get<number>('MAIL_PORT'),
           secure: false, // true nếu dùng port 465, false nếu dùng 587
           auth: {
             user: configService.get<string>('MAIL_USER'),
@@ -103,15 +100,8 @@ import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin
       }),
     }),
     
-    GraphQLModule.forRoot<ApolloDriverConfig>({
-      driver: ApolloDriver,
-      autoSchemaFile: true,
-      playground: false, 
-      plugins: [ApolloServerPluginLandingPageLocalDefault() as any],
-    }),
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
-    DatabaseModule,
     AuthModule,
     UsersModule,
     CategoriesModule, 
@@ -125,6 +115,7 @@ import { ApolloServerPluginLandingPageLocalDefault } from '@apollo/server/plugin
     AuditLogsModule,
     RedisModule,
     TasksModule,
+    ProcessorModule
   ],
   controllers: [],
   providers: [

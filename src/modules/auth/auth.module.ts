@@ -10,7 +10,6 @@ import { GoogleStrategy } from './strategies/google.strategy';
 import { FacebookStrategy} from './strategies/facebook.strategy';
 import { TwitterStrategy } from './strategies/twitter.strategy';
 import { BullModule } from '@nestjs/bullmq';
-import { MailProcessor } from '../../processor/mails.processor';
 import { IsEmailUniqueConstraint } from '../../validator/is-email-unique.validator';
 @Module({
   imports: [
@@ -30,6 +29,6 @@ import { IsEmailUniqueConstraint } from '../../validator/is-email-unique.validat
     BullModule.registerQueue({name: 'mail-queue'}),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GoogleStrategy, FacebookStrategy, TwitterStrategy, MailProcessor, IsEmailUniqueConstraint], 
+  providers: [AuthService, JwtStrategy, GoogleStrategy, FacebookStrategy, TwitterStrategy, IsEmailUniqueConstraint], 
 })
 export class AuthModule {}

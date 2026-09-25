@@ -1,0 +1,26 @@
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto;">
+    <h2 style="color: #333;">Chào {{fullName}},</h2>
+    <p>Tuần này E-Commerce có những sản phẩm mới cực hot dành riêng cho bạn:</p>
+    
+    <div style="background: #f9f9f9; padding: 15px; border-radius: 8px;">
+        {{#each products}}
+        <div style="margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+            <h4 style="margin: 0 0 5px 0;">{{this.name}}</h4>
+            <!-- Lưu ý: Giá tiền nên được format sẵn từ TS trước khi truyền vào -->
+            <p style="margin: 0; color: #e74c3c; font-weight: bold;">{{this.price}} đ</p>
+        </div>
+        {{/each}}
+    </div>
+
+    <div style="text-align: center; margin-top: 20px;">
+        <a href="http://localhost:5173/products" style="background: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold;">
+            Mua Sắm Ngay
+        </a>
+    </div>
+
+    <hr style="margin-top: 30px; border: none; border-top: 1px solid #ddd;" />
+    <p style="font-size: 12px; color: #999; text-align: center;">
+        Nếu bạn không muốn nhận email quảng cáo nữa, vui lòng 
+        <a href="http://localhost:5173/unsubscribe?user={{userId}}" style="color: #999;">Hủy đăng ký (Unsubscribe)</a>.
+    </p>
+</div>

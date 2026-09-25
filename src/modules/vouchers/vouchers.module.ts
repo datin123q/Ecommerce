@@ -7,5 +7,6 @@ import { DatabaseModule } from '../../database/database.module';
   imports: [DatabaseModule], 
   controllers: [VouchersController],
   providers: [VouchersService],
+  exports: [VouchersService]
 })
 export class VouchersModule {}

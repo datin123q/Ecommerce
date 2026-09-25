@@ -4,24 +4,30 @@ import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { StockInDto } from './dto/stock-in.dto';
 import { StockOutDto } from './dto/stock-out.dto';
-import { TransactionType } from '@prisma/client';
+import { TransactionType, Prisma, Inventory } from '@prisma/client';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+
+export type DeductItem = {
+  inventoryId: string;
+  quantity: number;
+};
+
+export type RestoreItem = {
+  inventoryId: string;
+  quantity: number;
+};
 
 @Injectable()
 export class InventoryService {
-  constructor(private readonly prisma: PrismaService, private readonly eventEmitter: EventEmitter2) {}
-
-  // --- NGHIỆP VỤ KHO HÀNG (WAREHOUSE) ---
+  constructor(
+    private readonly prisma: PrismaService, 
+    private readonly eventEmitter: EventEmitter2
+  ) {}
+  
   async createWarehouse(createWarehouseDto: CreateWarehouseDto, adminId: string) {
     const newWarehouse = await this.prisma.db.warehouse.create({ data: createWarehouseDto });
-    this.eventEmitter.emit('warehouse.created', {
-      id: adminId,
-      action: 'CREATE',
-      entity: 'Warehouse',
-      entityId: newWarehouse.id,
-      oldValue: null,        
-      newValue: newWarehouse,   
-    });
+    
+    this.postAuditEvent('warehouse.created', adminId, 'CREATE', 'Warehouse', newWarehouse.id, null, newWarehouse);
     return newWarehouse;
   }
   
@@ -33,156 +39,193 @@ export class InventoryService {
     return this.prisma.db.inventory.findMany();
   }
 
-  //sửa thông tin kho
   async update(id: string, updateWarehouseDto: UpdateWarehouseDto, adminId: string) {
     const oldWarehouse = await this.prisma.db.warehouse.findUnique({ where: { id } }); 
+    if (!oldWarehouse) throw new NotFoundException('Không tìm thấy kho');
+
     const newWarehouse = await this.prisma.db.warehouse.update({
       where: { id },
       data: updateWarehouseDto,
     });
-    this.eventEmitter.emit('warehouse.update', {
-      id: adminId,
-      action: 'UPDATE',
-      entity: 'Warehouse',
-      entityId: id,
-      oldValue: oldWarehouse,        
-      newValue: newWarehouse,   
-    });
-    return newWarehouse;
 
+    this.postAuditEvent('warehouse.update', adminId, 'UPDATE', 'Warehouse', id, oldWarehouse, newWarehouse);
+    return newWarehouse;
   }
 
-    async findOne(id: string) {
+  async findOne(id: string) {
     const warehouse = await this.prisma.db.warehouse.findUnique({
       where: { id },
-      include: {inventories: true}
+      include: { inventories: true }
     });
     if (!warehouse) throw new NotFoundException('Không tìm thấy kho');
     return warehouse;
   }
-    async remove(id: string, adminId: string) {
-      const oldWarehouse = await this.prisma.db.warehouse.findUnique({ where: { id } }); 
-      if (!oldWarehouse) throw new NotFoundException('Không tìm thấy kho');
-      const stockCount = await this.prisma.db.inventory.count({
-        where: { 
-          warehouseId: id,
-          quantity: { gt: 0 } 
-        }
-      });
+  
+  async remove(id: string, adminId: string) {
+    const oldWarehouse = await this.findOne(id);
+    
+    const stockCount = await this.prisma.db.inventory.count({
+      where: { warehouseId: id, quantity: { gt: 0 } }
+    });
 
-      if (stockCount > 0) {
-        throw new BadRequestException('Không thể xóa kho khi vẫn còn hàng bên trong'); // Lỗi 400 đúng nghĩa hơn 404
-      }
-
-      await this.prisma.db.warehouse.delete({ where: { id } });
-
-      this.eventEmitter.emit('warehouse.deleted', { // Đổi tên event chuẩn
-        actorId: adminId,
-        action: 'DELETE', // Sửa lỗi copy-paste từ CREATE -> DELETE
-        entity: 'Warehouse',
-        entityId: id,
-        oldValue: oldWarehouse,        
-        newValue: null,  
-      });
+    if (stockCount > 0) {
+      throw new BadRequestException('Không thể xóa kho khi vẫn còn hàng bên trong');
     }
-  // --- NGHIỆP VỤ NHẬP KHO (STOCK IN) ---
+
+    await this.prisma.db.warehouse.delete({ where: { id } });
+
+    this.postAuditEvent('warehouse.deleted', adminId, 'DELETE', 'Warehouse', id, oldWarehouse, null);
+  }
+
+  async getInventoriesByVariantIds(variantIds: string[]) {
+    return this.prisma.db.inventory.findMany({
+      where: { variantId: { in: variantIds } }, 
+      orderBy: { quantity: 'desc' },
+    });
+  }
+  
   async stockIn(userId: string, stockInDto: StockInDto) {
-    const { warehouseId, variantId, quantity } = stockInDto;
-    // 1. Kiểm tra ID kho và ID biến thể gửi lên có thật không
-    const warehouse = await this.prisma.db.warehouse.findUnique({ where: { id: warehouseId } });
-    if (!warehouse) throw new NotFoundException('Không tìm thấy kho hàng');
+    await this.validateWarehouseAndVariant(stockInDto.warehouseId, stockInDto.variantId);
 
-    const variant = await this.prisma.db.productVariant.findUnique({ where: { id: variantId } });
-    if (!variant) throw new NotFoundException('Không tìm thấy biến thể sản phẩm');
+    const result = await this.executeStockInTransaction(userId, stockInDto);
 
-    // 2. Tiến hành giao dịch (Transaction)
-    const result = await this.prisma.db.$transaction(async (prisma) => {
-      const oldInventory = await prisma.inventory.findUnique({
-      where: {
-        warehouseId_variantId: { warehouseId, variantId },
-      },
-    });
-      //  Cập nhật tồn kho (Upsert)
-      const newInventory = await prisma.inventory.upsert({
-        where: {
-          warehouseId_variantId: { warehouseId, variantId },
-        },
-        create: { warehouseId, variantId, quantity },
-        update: { quantity: { increment: quantity } }, // Cộng thêm số lượng
-      });
-      //  Lưu vào sổ nhật ký kho (Transaction History)
-      const transaction = await prisma.inventoryTransaction.create({
-        data: {
-          type: TransactionType.IN,
-          quantity,
-          inventoryId: newInventory.id,
-          userId, 
-        },
-      });
+    const action = result.oldInventory ? 'UPDATE' : 'CREATE';
+    this.postAuditEvent('inventory.stockIn', userId, action, 'Inventory', result.newInventory.id, result.oldInventory, result.newInventory);
 
-      return {oldInventory, newInventory, transaction };
-    });
-
-    this.eventEmitter.emit('inventory.stockIn', {
-      actorId: userId,
-      action: result.oldInventory ? 'UPDATE' : 'CREATE',
-      entity: 'Inventory',
-      entityId: result.newInventory.id,
-      oldValue: result.oldInventory,        
-      newValue: result.newInventory,  
-    });
     return { newInventory: result.newInventory, transaction: result.transaction };
   }
 
   async stockOut(userId: string, stockOutDto: StockOutDto) {
-    const { warehouseId, variantId, quantity } = stockOutDto;
 
-    // 1. Kiểm tra ID kho và ID biến thể gửi lên có thật không
-    const warehouse = await this.prisma.db.warehouse.findUnique({ where: { id: warehouseId } });
-    if (!warehouse) throw new NotFoundException('Không tìm thấy kho hàng');
+    await this.validateWarehouseAndVariant(stockOutDto.warehouseId, stockOutDto.variantId);
 
-    const variant = await this.prisma.db.productVariant.findUnique({ where: { id: variantId } });
-    if (!variant) throw new NotFoundException('Không tìm thấy biến thể sản phẩm');
+    const result = await this.executeStockOutTransaction(userId, stockOutDto);
+
+    this.postAuditEvent('inventory.stockOut', userId, 'UPDATE', 'Inventory', result.newInventory.id, result.oldInventory, result.newInventory);
+
+    return result.newInventory;
+  }
+  
+  async deductStockAndLog(
+    tx: Prisma.TransactionClient, 
+    items: DeductItem[], 
+    userId: string
+  ) {
+    if (items.length === 0) return [];
+
+    const updatePromises = items.map(item =>
+      tx.inventory.update({
+        where: { id: item.inventoryId },
+        data: { quantity: { decrement: item.quantity } },
+      })
+    );
+    const updatedInventories = await Promise.all(updatePromises);
+
+    const transactionLogs = items.map(item => ({
+      type: TransactionType.OUT,
+      quantity: item.quantity,
+      inventoryId: item.inventoryId,
+      userId,
+    }));
     
-    // 2. Tiến hành giao dịch (Transaction)
-    return this.prisma.db.$transaction(async (prisma) => {
-      const oldInventory = await prisma.inventory.findUnique({
-      where: {
-        warehouseId_variantId: { warehouseId, variantId },
-      },
-      });
-      if(oldInventory && oldInventory.quantity<stockOutDto.quantity){throw new NotFoundException('Số lượng tồn kho không đủ')} 
-      if (!oldInventory || oldInventory.quantity < quantity) {
-        throw new BadRequestException(`Số lượng tồn kho không đủ (Hiện có: ${oldInventory?.quantity || 0})`);
-      }
-      //  Cập nhật tồn kho (Upsert)
-      const newInventory = await prisma.inventory.update({
-        where: {
-          warehouseId_variantId: { warehouseId, variantId },
-        },
-        data: { quantity: { decrement: quantity } },
-      });
+    await tx.inventoryTransaction.createMany({ data: transactionLogs });
 
-      //  Lưu vào sổ nhật ký kho (Transaction History)
-      const transaction = await prisma.inventoryTransaction.create({
+    return updatedInventories;
+  }
+
+  async restoreStockAndLog(
+    tx: Prisma.TransactionClient, 
+    items: RestoreItem[], 
+    userId: string
+  ) {
+    if (items.length === 0) return;
+
+    const updatePromises = items.map(item =>
+      tx.inventory.update({
+        where: { id: item.inventoryId }, 
+        data: { quantity: { increment: item.quantity } },
+      })
+    );
+    await Promise.all(updatePromises);
+
+    const logs = items.map(item => ({
+      type: TransactionType.IN,
+      quantity: item.quantity,
+      inventoryId: item.inventoryId,
+      userId,
+    }));
+    
+    await tx.inventoryTransaction.createMany({ data: logs });
+  }
+
+  private async validateWarehouseAndVariant(warehouseId: string, variantId: string) {
+    const [warehouse, variant] = await Promise.all([
+      this.prisma.db.warehouse.findUnique({ where: { id: warehouseId } }),
+      this.prisma.db.productVariant.findUnique({ where: { id: variantId } })
+    ]);
+
+    if (!warehouse) throw new NotFoundException('Không tìm thấy kho hàng');
+    if (!variant) throw new NotFoundException('Không tìm thấy biến thể sản phẩm');
+  }
+
+  private async executeStockInTransaction(userId: string, dto: StockInDto) {
+    return this.prisma.db.$transaction(async (tx) => {
+      const oldInventory = await tx.inventory.findUnique({
+        where: { warehouseId_variantId: { warehouseId: dto.warehouseId, variantId: dto.variantId } },
+      });
+      
+      const newInventory = await tx.inventory.upsert({
+        where: { warehouseId_variantId: { warehouseId: dto.warehouseId, variantId: dto.variantId } },
+        create: { warehouseId: dto.warehouseId, variantId: dto.variantId, quantity: dto.quantity },
+        update: { quantity: { increment: dto.quantity } }, 
+      });
+      
+      const transaction = await tx.inventoryTransaction.create({
         data: {
-          type: TransactionType.OUT,
-          quantity,
+          type: TransactionType.IN,
+          quantity: dto.quantity,
           inventoryId: newInventory.id,
           userId, 
         },
       });
 
-      this.eventEmitter.emit('inventory.stockOut', {
-        id: userId,
-        action: oldInventory?'UPDATE' : 'CREATE',
-        entity: 'Inventory',
-        entityId: newInventory.id,
-        oldValue: oldInventory,        
-        newValue: newInventory,   
+      return { oldInventory, newInventory, transaction };
+    });
+  }
+
+  private async executeStockOutTransaction(userId: string, dto: StockOutDto) {
+    return this.prisma.db.$transaction(async (tx) => {
+      const inventory = await tx.inventory.findUnique({
+        where: { warehouseId_variantId: { warehouseId: dto.warehouseId, variantId: dto.variantId } },
       });
 
-      return { newInventory, transaction };
+      if (!inventory || inventory.quantity < dto.quantity) {
+        throw new BadRequestException(`Số lượng tồn kho không đủ (Hiện có: ${inventory?.quantity || 0})`);
+      }
+
+      const itemsToDeduct = [{ inventoryId: inventory.id, quantity: dto.quantity }];
+      const updatedInventories = await this.deductStockAndLog(tx, itemsToDeduct, userId);
+
+      return { oldInventory: inventory, newInventory: updatedInventories[0] };
+    });
+  }
+
+  private postAuditEvent(
+    eventName: string, 
+    actorId: string, 
+    action: string, 
+    entity: string, 
+    entityId: string, 
+    oldValue: any, 
+    newValue: any
+  ) {
+    this.eventEmitter.emit(eventName, {         
+      actorId,
+      action,
+      entity,
+      entityId,
+      oldValue,        
+      newValue,   
     });
   }
 }

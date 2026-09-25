@@ -62,7 +62,6 @@ export class InventoryController {
 
   @Post('stock-out')
   @ApiOperation({ summary: 'Xuất hàng khỏi kho' })
-  // SỬA LỖI: Đổi StockInDto thành StockOutDto
   stockOut(@CurrentUser() user: any, @Body() stockOutDto: StockOutDto) {
     return this.inventoryService.stockOut(user.id, stockOutDto);
   }

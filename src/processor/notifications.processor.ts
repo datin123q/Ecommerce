@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
@@ -19,7 +20,7 @@ export class NotificationProcessor extends WorkerHost {
         try {
           await this.notificationsService.createNotification(
             job.data.userId, 
-            job.data.content 
+            job.data.content,
           );
           this.logger.log(`[Worker] Đã lưu thông báo cho User ${job.data.userId}`);
         } catch (error) {

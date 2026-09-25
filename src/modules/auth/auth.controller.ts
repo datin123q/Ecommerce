@@ -70,13 +70,19 @@ export class AuthController {
 @Post('refresh')
 @ApiOperation({ summary: 'Cấp lại Access Token mới' })
 async refresh(@Req() req: any) {
-  const refreshToken = req.cookies?.refresh_token;
+
+  const refreshToken =
+    req.cookies?.refresh_token;
 
   if (!refreshToken) {
-    throw new UnauthorizedException('Không tìm thấy refresh token');
+    throw new UnauthorizedException(
+      'Không tìm thấy refresh token'
+    );
   }
 
-  return this.authService.refreshToken(refreshToken);
+  return this.authService.refreshToken(
+    refreshToken
+  );
 }
 
   @Post('logout')
@@ -118,6 +124,7 @@ async refresh(@Req() req: any) {
       sameSite: 'lax', 
       maxAge: 7 * 24 * 60 * 60 * 1000, 
     });
+    console.log(tokens.accessToken);
     return res.redirect(
       `${frontendUrl}/login-success?accessToken=${tokens.accessToken}`
     );
@@ -172,7 +179,7 @@ async refresh(@Req() req: any) {
   @ApiBearerAuth() 
   @ApiOperation({ summary: 'Gửi link xác thực qua email' })
   userVerified( @CurrentUser() user: any) {
-    return this.authService.userVerified(user.id);
+    return this.authService.requestVerification(user.id);
   }
 
   @Post('verify-account')

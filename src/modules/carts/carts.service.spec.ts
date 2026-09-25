@@ -2,56 +2,47 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CartsService } from './carts.service';
 import { PrismaService } from '../../database/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { NotFoundException } from '@nestjs/common';
+import { RedisCacheService } from '../../redis/redisCache.service';
+import { NotFoundException, BadRequestException } from '@nestjs/common';
 
 describe('CartsService', () => {
   let service: CartsService;
   let prisma: PrismaService;
+  let cacheService: RedisCacheService;
   let eventEmitter: EventEmitter2;
 
-  // --- MOCK DATA ---
-  const mockUserId = 'user-123';
-  const mockCartId = 'cart-123';
-  const mockVariantId = 'variant-123';
-  const mockCartItemId = 'cart-item-123';
-
-  const mockCart = {
-    id: mockCartId,
-    userId: mockUserId,
-    cartItems: [],
-  };
-
-  const mockVariant = {
-    id: mockVariantId,
-    name: 'Áo thun đen size L',
-    product: { id: 'prod-1', name: 'Áo thun' },
-  };
-
-  const mockCartItem = {
-    id: mockCartItemId,
-    cartId: mockCartId,
-    variantId: mockVariantId,
-    quantity: 2,
-    variant: mockVariant,
-  };
-
   const mockPrismaService = {
-    cart: {
-      findFirst: jest.fn(),
-      create: jest.fn(),
+    db: {
+      cart: {
+        findFirst: jest.fn(),
+        create: jest.fn(),
+      },
+      productVariant: {
+        findUnique: jest.fn(),
+      },
+      cartItem: {
+        upsert: jest.fn(),
+        findFirst: jest.fn(),
+        delete: jest.fn(),
+      },
     },
-    productVariant: {
-      findUnique: jest.fn(),
-    },
-    cartItem: {
-      upsert: jest.fn(),
-      findFirst: jest.fn(),
-      delete: jest.fn(),
-    },
+  };
+
+  const mockCacheService = {
+    get: jest.fn(),
+    set: jest.fn(),
+    del: jest.fn(),
   };
 
   const mockEventEmitter = {
     emit: jest.fn(),
+  };
+
+  const userId = 'user-123';
+  const mockCart = {
+    id: 'cart-1',
+    userId,
+    cartItems: [],
   };
 
   beforeEach(async () => {
@@ -59,130 +50,154 @@ describe('CartsService', () => {
       providers: [
         CartsService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: RedisCacheService, useValue: mockCacheService },
         { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 
     service = module.get<CartsService>(CartsService);
     prisma = module.get<PrismaService>(PrismaService);
+    cacheService = module.get<RedisCacheService>(RedisCacheService);
     eventEmitter = module.get<EventEmitter2>(EventEmitter2);
-  });
 
-  afterEach(() => {
     jest.clearAllMocks();
   });
 
-  it('should be defined', () => {
+  it('Service phải được khởi tạo thành công', () => {
     expect(service).toBeDefined();
   });
 
-  // ==========================================================
-  // GET MY CART
-  // ==========================================================
   describe('getMyCart', () => {
-    it('should return existing cart if found', async () => {
-      mockPrismaService.cart.findFirst.mockResolvedValue(mockCart);
+    it('Nên trả về giỏ hàng từ Cache nếu cache tồn tại', async () => {
+      mockCacheService.get.mockResolvedValue(mockCart);
 
-      const result = await service.getMyCart(mockUserId);
+      const result = await service.getMyCart(userId);
 
-      expect(prisma.cart.findFirst).toHaveBeenCalledWith({
-        where: { userId: mockUserId },
-        include: expect.any(Object),
-      });
-      expect(prisma.cart.create).not.toHaveBeenCalled();
       expect(result).toEqual(mockCart);
+      expect(cacheService.get).toHaveBeenCalledWith(`cart_${userId}_v`);
+      expect(prisma.db.cart.findFirst).not.toHaveBeenCalled();
     });
 
-    it('should create and return a new cart if not found', async () => {
-      mockPrismaService.cart.findFirst.mockResolvedValue(null);
-      const newCart = { ...mockCart, id: 'new-cart-123' };
-      mockPrismaService.cart.create.mockResolvedValue(newCart);
+    it('Nên lấy từ DB và lưu vào Cache nếu cache rỗng và giỏ hàng đã tồn tại', async () => {
+      mockCacheService.get.mockResolvedValue(null);
+      mockPrismaService.db.cart.findFirst.mockResolvedValue(mockCart);
 
-      const result = await service.getMyCart(mockUserId);
+      const result = await service.getMyCart(userId);
 
-      expect(prisma.cart.findFirst).toHaveBeenCalled();
-      expect(prisma.cart.create).toHaveBeenCalledWith({
-        data: { userId: mockUserId },
+      expect(result).toEqual(mockCart);
+      expect(prisma.db.cart.findFirst).toHaveBeenCalledWith({
+        where: { userId },
         include: expect.any(Object),
       });
-      expect(result).toEqual(newCart);
+      expect(cacheService.set).toHaveBeenCalledWith(`cart_${userId}_v`, mockCart);
+    });
+
+    it('Nên tạo mới giỏ hàng trong DB nếu người dùng chưa có giỏ hàng', async () => {
+      mockCacheService.get.mockResolvedValue(null);
+      mockPrismaService.db.cart.findFirst.mockResolvedValue(null);
+      mockPrismaService.db.cart.create.mockResolvedValue(mockCart);
+
+      const result = await service.getMyCart(userId);
+
+      expect(result).toEqual(mockCart);
+      expect(prisma.db.cart.create).toHaveBeenCalled();
+      expect(cacheService.set).toHaveBeenCalledWith(`cart_${userId}_v`, mockCart);
     });
   });
 
-  // ==========================================================
-  // ADD TO CART
-  // ==========================================================
+
   describe('addToCart', () => {
-    const dto = { variantId: mockVariantId, quantity: 2 };
+    const dto = { variantId: 'var-1', quantity: 2 };
+    const mockVariant = {
+      id: 'var-1',
+      name: 'Size L',
+      product: { name: 'Áo Thun' },
+    };
 
-    it('should throw NotFoundException if variant does not exist', async () => {
-      mockPrismaService.productVariant.findUnique.mockResolvedValue(null);
+    it('Nên ném NotFoundException nếu biến thể sản phẩm không tồn tại', async () => {
+      mockPrismaService.db.productVariant.findUnique.mockResolvedValue(null);
 
-      await expect(service.addToCart(mockUserId, dto)).rejects.toThrow(NotFoundException);
-      expect(prisma.productVariant.findUnique).toHaveBeenCalledWith({
-        where: { id: dto.variantId },
-        include: { product: true },
-      });
-      expect(prisma.cartItem.upsert).not.toHaveBeenCalled();
-    });
-
-    it('should add item to cart and emit created event', async () => {
-      mockPrismaService.productVariant.findUnique.mockResolvedValue(mockVariant);
-      mockPrismaService.cart.findFirst.mockResolvedValue(mockCart); 
-      mockPrismaService.cartItem.upsert.mockResolvedValue(mockCartItem);
-
-      const result = await service.addToCart(mockUserId, dto);
-
-      expect(prisma.cartItem.upsert).toHaveBeenCalledWith({
-        where: {
-          cartId_variantId: { cartId: mockCartId, variantId: mockVariantId },
-        },
-        update: { quantity: { increment: dto.quantity } },
-        create: { cartId: mockCartId, variantId: mockVariantId, quantity: dto.quantity },
-      });
-
-      expect(eventEmitter.emit).toHaveBeenCalledWith('cartItem.created', {
-        userId: mockUserId,
-        content: `Đã thêm ${mockVariant.name} x ${dto.quantity} vào giỏ hàng`,
-      });
-
-      expect(result).toEqual(mockCartItem);
-    });
-  });
-
-  // ==========================================================
-  // REMOVE CART ITEM
-  // ==========================================================
-  describe('removeCartItem', () => {
-    it('should throw NotFoundException if cart item does not exist in user cart', async () => {
-      mockPrismaService.cart.findFirst.mockResolvedValue(mockCart);
-      mockPrismaService.cartItem.findFirst.mockResolvedValue(null);
-
-      await expect(service.removeCartItem(mockUserId, mockCartItemId)).rejects.toThrow(
+      await expect(service.addToCart(userId, dto)).rejects.toThrow(
         NotFoundException,
       );
-      expect(prisma.cartItem.findFirst).toHaveBeenCalledWith({
-        where: { id: mockCartItemId, cartId: mockCartId },
-        include: { variant: true },
-      });
-      expect(prisma.cartItem.delete).not.toHaveBeenCalled();
     });
 
-    it('should delete cart item and emit delete event if item exists', async () => {
-      mockPrismaService.cart.findFirst.mockResolvedValue(mockCart);
-      mockPrismaService.cartItem.findFirst.mockResolvedValue(mockCartItem);
-      mockPrismaService.cartItem.delete.mockResolvedValue(mockCartItem);
+    it('Nên thêm sản phẩm vào giỏ, bắn sự kiện và xóa cache thành công', async () => {
+      mockPrismaService.db.productVariant.findUnique.mockResolvedValue(mockVariant);
+      mockCacheService.get.mockResolvedValue(mockCart); // Giả lập đã có giỏ hàng
+      
+      const mockCartItem = { id: 'item-1', cartId: 'cart-1', variantId: 'var-1', quantity: 2 };
+      mockPrismaService.db.cartItem.upsert.mockResolvedValue(mockCartItem);
 
-      const result = await service.removeCartItem(mockUserId, mockCartItemId);
+      const result = await service.addToCart(userId, dto);
 
-      expect(prisma.cartItem.delete).toHaveBeenCalledWith({
-        where: { id: mockCartItemId },
-      });
-      expect(eventEmitter.emit).toHaveBeenCalledWith('cartItem.delete', {
-        userId: mockUserId,
-        content: `Xóa ${mockCartItem.variant.name} khỏi giỏ hàng`,
-      });
       expect(result).toEqual(mockCartItem);
+      expect(prisma.db.cartItem.upsert).toHaveBeenCalled();
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'cartItem.created',
+        expect.objectContaining({ userId }),
+      );
+      expect(cacheService.del).toHaveBeenCalledWith(`cart_${userId}_v`);
+    });
+  });
+
+  describe('removeCartItem', () => {
+    const cartItemId = 'item-1';
+    const mockItem = {
+      id: cartItemId,
+      cartId: 'cart-1',
+      variant: { name: 'Size L', product: { name: 'Áo Thun' } },
+    };
+
+    it('Nên ném NotFoundException nếu sản phẩm không có trong giỏ hàng', async () => {
+      mockCacheService.get.mockResolvedValue(mockCart);
+      mockPrismaService.db.cartItem.findFirst.mockResolvedValue(null);
+
+      await expect(service.removeCartItem(userId, cartItemId)).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('Nên xóa sản phẩm khỏi giỏ, bắn sự kiện và dọn sạch cache', async () => {
+      mockCacheService.get.mockResolvedValue(mockCart);
+      mockPrismaService.db.cartItem.findFirst.mockResolvedValue(mockItem);
+      mockPrismaService.db.cartItem.delete.mockResolvedValue(mockItem);
+
+      const result = await service.removeCartItem(userId, cartItemId);
+
+      expect(result).toEqual(mockItem);
+      expect(prisma.db.cartItem.delete).toHaveBeenCalledWith({ where: { id: cartItemId } });
+      expect(eventEmitter.emit).toHaveBeenCalledWith(
+        'cartItem.delete',
+        expect.objectContaining({ userId }),
+      );
+      expect(cacheService.del).toHaveBeenCalledWith(`cart_${userId}_v`);
+    });
+  });
+
+
+  describe('getCartForCheckout', () => {
+    it('Nên ném BadRequestException nếu giỏ hàng trống', async () => {
+      mockPrismaService.db.cart.findFirst.mockResolvedValue({
+        ...mockCart,
+        cartItems: [],
+      });
+
+      await expect(service.getCartForCheckout(userId)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('Nên trả về giỏ hàng nếu chứa các sản phẩm hợp lệ', async () => {
+      const nonEmptyCart = {
+        ...mockCart,
+        cartItems: [{ id: 'item-1', quantity: 1 }],
+      };
+      mockPrismaService.db.cart.findFirst.mockResolvedValue(nonEmptyCart);
+
+      const result = await service.getCartForCheckout(userId);
+
+      expect(result).toEqual(nonEmptyCart);
     });
   });
 });

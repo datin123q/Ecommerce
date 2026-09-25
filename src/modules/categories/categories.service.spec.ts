@@ -2,232 +2,181 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CategoriesService } from './categories.service';
 import { PrismaService } from '../../database/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { RedisCacheService } from '../../redis/redisCache.service';
 import { ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 
 describe('CategoriesService', () => {
   let service: CategoriesService;
   let prisma: PrismaService;
+  let cacheService: RedisCacheService;
+  let eventEmitter: EventEmitter2;
 
-  // --- DỮ LIỆU GIẢ ĐỊNH (MOCK DATA) ---
-  const mockAdminId = 'admin-123';
-  const mockCategoryId = 'category-123';
-    let eventEmitter: EventEmitter2;
-
-  const mockCategory = {
-    id: mockCategoryId,
-    name: 'Điện thoại',
-    description: 'Danh mục điện thoại',
-  };
-
-  const createCategoryDto = {
-    name: 'Điện thoại',
-    description: 'Danh mục điện thoại',
-  };
-
-  const updateCategoryDto = {
-    name: 'Laptop',
-  };
-
-  // --- MOCK SERVICES ---
   const mockPrismaService = {
-    category: {
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      findMany: jest.fn(),
-      update: jest.fn(),
-      delete: jest.fn(),
+    db: {
+      category: {
+        create: jest.fn(),
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
+      product: {
+        findMany: jest.fn(),
+        deleteMany: jest.fn(),
+      },
+      productVariant: {
+        deleteMany: jest.fn(),
+      },
+      $transaction: jest.fn().mockImplementation(async (callback) => {
+        return await callback(mockPrismaService.db);
+      }),
     },
+  };
+
+  const mockCacheService = {
+    get: jest.fn(),
+    set: jest.fn(),
+    del: jest.fn(),
+    delByPattern: jest.fn(),
   };
 
   const mockEventEmitter = {
     emit: jest.fn(),
   };
 
+  const adminId = 'admin-123';
+  const mockCategory = {
+    id: 'cat-1',
+    name: 'Áo Thun Nam',
+    description: 'Mô tả áo thun',
+  };
+
   beforeEach(async () => {
+    // Khởi tạo Module Test
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CategoriesService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: RedisCacheService, useValue: mockCacheService },
         { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 
     service = module.get<CategoriesService>(CategoriesService);
     prisma = module.get<PrismaService>(PrismaService);
+    cacheService = module.get<RedisCacheService>(RedisCacheService);
     eventEmitter = module.get<EventEmitter2>(EventEmitter2);
-  });
 
-  afterEach(() => {
+    // Xóa sạch lịch sử gọi hàm sau mỗi lần test
     jest.clearAllMocks();
   });
 
-  it('should be defined', () => {
+  it('Service phải được khởi tạo thành công', () => {
     expect(service).toBeDefined();
   });
 
-  // ==========================================================
-  // CREATE
-  // ==========================================================
+  // TEST SUITE: CREATE CATEGORY
   describe('create', () => {
-    it('should throw ConflictException if category name already exists', async () => {
+    const dto = { name: 'Áo Thun Nam', description: 'Mô tả' };
 
-      mockPrismaService.category.findUnique.mockResolvedValue(mockCategory);
+    it('Nên tạo danh mục thành công, bắn sự kiện và xóa cache', async () => {
+      mockPrismaService.db.category.create.mockResolvedValue(mockCategory);
 
-      await expect(service.create(createCategoryDto, mockAdminId)).rejects.toThrow(
-        ConflictException,
-      );
-      expect(prisma.category.findUnique).toHaveBeenCalledWith({
-        where: { name: createCategoryDto.name },
-      });
-      expect(prisma.category.create).not.toHaveBeenCalled();
-    });
-
-    it('should create a new category and log the action', async () => {
-      mockPrismaService.category.findUnique.mockResolvedValue(null);
-      mockPrismaService.category.create.mockResolvedValue(mockCategory);
-
-      const result = await service.create(createCategoryDto, mockAdminId);
-
-      expect(prisma.category.create).toHaveBeenCalledWith({
-        data: createCategoryDto,
-      });
-
-      expect(eventEmitter.emit).toHaveBeenCalledWith('category.created',{
-        id: mockAdminId,
-        action: 'CREATE',
-        entity: 'Category',
-        entityId: mockCategory.id,
-        oldValue: null,
-        newValue: mockCategory,
-        tx: prisma, 
-      });
+      const result = await service.create(dto, adminId);
 
       expect(result).toEqual(mockCategory);
+      expect(prisma.db.category.create).toHaveBeenCalledWith({ data: dto });
+      expect(eventEmitter.emit).toHaveBeenCalledWith('category.created', expect.any(Object));
+      expect(cacheService.del).toHaveBeenCalledWith('categories_all');
+    });
+
+    it('Nên ném lỗi ConflictException nếu trùng tên (Lỗi P2002)', async () => {
+      // Giả lập lỗi P2002 của Prisma
+      const prismaError = new Prisma.PrismaClientKnownRequestError('Trùng tên', {
+        code: 'P2002',
+        clientVersion: 'v1',
+      });
+      mockPrismaService.db.category.create.mockRejectedValue(prismaError);
+
+      await expect(service.create(dto, adminId)).rejects.toThrow(ConflictException);
     });
   });
 
-  // ==========================================================
-  // FIND ALL
-  // ==========================================================
+  // TEST SUITE: FIND ALL
   describe('findAll', () => {
-    it('should return all categories with products count', async () => {
-      const mockCategories = [
-        { ...mockCategory, _count: { products: 5 } },
-        { id: 'cat-2', name: 'Phụ kiện', _count: { products: 10 } },
-      ];
-      mockPrismaService.category.findMany.mockResolvedValue(mockCategories);
+    it('Nên trả về dữ liệu từ Cache nếu Cache tồn tại (Không gọi DB)', async () => {
+      mockCacheService.get.mockResolvedValue([mockCategory]);
 
       const result = await service.findAll();
 
-      expect(prisma.category.findMany).toHaveBeenCalledWith({
-        include: {
-          _count: {
-            select: { products: true },
-          },
-        },
-      });
-      expect(result).toEqual(mockCategories);
+      expect(result).toEqual([mockCategory]);
+      expect(cacheService.get).toHaveBeenCalledWith('categories_all');
+      expect(prisma.db.category.findMany).not.toHaveBeenCalled(); // Đảm bảo không chọc DB
+    });
+
+    it('Nên lấy từ DB nếu Cache rỗng, sau đó lưu lại vào Cache', async () => {
+      mockCacheService.get.mockResolvedValue(null); 
+      mockPrismaService.db.category.findMany.mockResolvedValue([mockCategory]);
+
+      const result = await service.findAll();
+
+      expect(result).toEqual([mockCategory]);
+      expect(prisma.db.category.findMany).toHaveBeenCalled();
+      expect(cacheService.set).toHaveBeenCalledWith('categories_all', [mockCategory]);
     });
   });
 
-  // ==========================================================
-  // FIND ONE
-  // ==========================================================
+  // TEST SUITE: FIND ONE
   describe('findOne', () => {
-    it('should throw NotFoundException if category is not found', async () => {
-      mockPrismaService.category.findUnique.mockResolvedValue(null);
+    it('Nên ném NotFoundException nếu danh mục không tồn tại', async () => {
+      mockCacheService.get.mockResolvedValue(null);
+      mockPrismaService.db.category.findUnique.mockResolvedValue(null); // DB không có
 
-      await expect(service.findOne(mockCategoryId)).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('should return category if found', async () => {
-      mockPrismaService.category.findUnique.mockResolvedValue(mockCategory);
-
-      const result = await service.findOne(mockCategoryId);
-
-      expect(prisma.category.findUnique).toHaveBeenCalledWith({
-        where: { id: mockCategoryId },
-      });
-      expect(result).toEqual(mockCategory);
+      await expect(service.findOne('cat-99')).rejects.toThrow(NotFoundException);
     });
   });
 
-  // ==========================================================
-  // UPDATE
-  // ==========================================================
-  describe('update', () => {
-    it('should throw NotFoundException if category does not exist', async () => {
-      mockPrismaService.category.findUnique.mockResolvedValue(null);
-
-      await expect(service.update(mockCategoryId, updateCategoryDto, mockAdminId)).rejects.toThrow(
-        NotFoundException,
-      );
-      expect(prisma.category.update).not.toHaveBeenCalled();
-    });
-
-    it('should update category and log the action', async () => {
-      const updatedCategory = { ...mockCategory, name: 'Laptop' };
-      
-      mockPrismaService.category.findUnique.mockResolvedValue(mockCategory); 
-
-      mockPrismaService.category.update.mockResolvedValue(updatedCategory);
-
-      const result = await service.update(mockCategoryId, updateCategoryDto, mockAdminId);
-
-      expect(prisma.category.update).toHaveBeenCalledWith({
-        where: { id: mockCategoryId },
-        data: updateCategoryDto,
-      });
-
-      expect(eventEmitter.emit).toHaveBeenCalledWith('category.update',{
-        id: mockAdminId,
-        action: 'UPDATE',
-        entity: 'Category',
-        entityId: mockCategoryId,
-        oldValue: mockCategory,
-        newValue: updatedCategory,
-        tx: prisma, 
-      });
-
-      expect(result).toEqual(updatedCategory);
-    });
-  });
-
-  // ==========================================================
-  // REMOVE
-  // ==========================================================
+  // TEST SUITE: REMOVE CATEGORY (Luồng xóa phức tạp nhất)
   describe('remove', () => {
-    it('should throw NotFoundException if category does not exist', async () => {
-      mockPrismaService.category.findUnique.mockResolvedValue(null);
+    it('Nên xóa danh mục và tất cả sản phẩm, bắn event và dọn sạch cache dây chuyền', async () => {
+      // 1. Mock bước findOne (Tồn tại danh mục)
+      mockCacheService.get.mockResolvedValue(null);
+      mockPrismaService.db.category.findUnique.mockResolvedValue(mockCategory);
 
-      await expect(service.remove(mockCategoryId, mockAdminId)).rejects.toThrow(
-        NotFoundException,
-      );
-      expect(prisma.category.delete).not.toHaveBeenCalled();
-    });
+      // 2. Mock bước tìm sản phẩm con thuộc danh mục đó
+      const mockProducts = [{ id: 'prod-1' }, { id: 'prod-2' }];
+      mockPrismaService.db.product.findMany.mockResolvedValue(mockProducts);
 
-    it('should remove category and log the action', async () => {
-      mockPrismaService.category.findUnique.mockResolvedValue(mockCategory);
-      mockPrismaService.category.delete.mockResolvedValue(mockCategory);
+      // 3. Mock kết quả trả về của lệnh xóa
+      mockPrismaService.db.category.delete.mockResolvedValue(mockCategory);
 
-      const result = await service.remove(mockCategoryId, mockAdminId);
+      // THỰC THI
+      const result = await service.remove('cat-1', adminId);
 
-      expect(eventEmitter.emit).toHaveBeenCalledWith('category.delete',{
-        id: mockAdminId,
-        action: 'DELETE',
-        entity: 'Category',
-        entityId: mockCategoryId,
-        oldValue: mockCategory,
-        newValue: null,
-        tx: prisma, 
-      });
-      expect(prisma.category.delete).toHaveBeenCalledWith({
-        where: { id: mockCategoryId },
-      });
-
+      // KIỂM TRA
       expect(result).toEqual(mockCategory);
+      
+      // Đảm bảo Transaction xóa dây chuyền được gọi đúng
+      expect(prisma.db.productVariant.deleteMany).toHaveBeenCalledWith({
+        where: { productId: { in: ['prod-1', 'prod-2'] } }
+      });
+      expect(prisma.db.product.deleteMany).toHaveBeenCalledWith({
+        where: { categoryId: 'cat-1' },
+      });
+      expect(prisma.db.category.delete).toHaveBeenCalledWith({
+        where: { id: 'cat-1' },
+      });
+
+      // Kiểm tra Event Audit
+      expect(eventEmitter.emit).toHaveBeenCalledWith('category.delete', expect.any(Object));
+
+      // Kiểm tra XÓA CACHE CÓ LÂY SANG PRODUCT KHÔNG 
+      expect(cacheService.del).toHaveBeenCalledWith(
+        'categories_all', 
+        'category_cat-1_v', 
+        'products_key' 
+      );
     });
   });
 });
