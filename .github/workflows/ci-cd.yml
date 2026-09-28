@@ -32,10 +32,10 @@ jobs:
       - name:  Kéo source code về máy chủ GitHub
         uses: actions/checkout@v3
 
-      - name:  Cài đặt Node.js 20
-        uses: actions/setup-node@v3
+      - name:  Cài đặt Node.js 24
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm' # Giúp cài đặt nhanh hơn ở các lần sau
 
       - name:  Cài đặt thư viện (Chuẩn môi trường sạch)
