@@ -1,71 +1,78 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { OrdersService } from './orders.service';
+import { OrdersService, CartWithItems, AllocatedItem, PricingResult } from './orders.service';
 import { PrismaService } from '../../database/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { RedisCacheService } from '../../redis/redisCache.service';
+import { InventoryService } from '../inventory/inventory.service';
+import { VouchersService } from '../vouchers/vouchers.service';
+import { CartsService } from '../carts/carts.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { TransactionType } from '@prisma/client';
+import { OrderStatus } from '@prisma/client';
+
+// Import trực tiếp các Domain Class để Mock Static Method
+import { InventoryAllocation } from './domain/inventory-allocation';
+import { PriceCalculation } from './domain/price-calculation';
+import { StateTransition } from './domain/state-transition';
 
 describe('OrdersService', () => {
   let service: OrdersService;
   let prisma: PrismaService;
   let eventEmitter: EventEmitter2;
+  let cacheService: RedisCacheService;
+  let inventoryService: InventoryService;
+  let voucherService: VouchersService;
+  let cartsService: CartsService;
 
-  // --- DỮ LIỆU GIẢ ĐỊNH (MOCK DATA) ---
-  const mockUserId = 'user-123';
-  const mockOrderId = 'order-123';
-  const mockVariantId = 'variant-1';
-  const mockVoucherId = 'voucher-1';
+  // 1. KHỞI TẠO CÁC MOCK OBJECTS
+  const mockPrismaService = {
+    db: {
+      order: {
+        create: jest.fn(),
+        update: jest.fn(),
+        findUnique: jest.fn(),
+        findMany: jest.fn(),
+      },
+      cartItem: {
+        deleteMany: jest.fn(),
+      },
+      // Kỹ thuật Mock Prisma Transaction
+      $transaction: jest.fn().mockImplementation(async (callback) => {
+        return callback(mockPrismaService.db);
+      }),
+    },
+  };
 
-  const mockCart = {
+  const mockEventEmitter = { emit: jest.fn() };
+  const mockCacheService = { del: jest.fn().mockResolvedValue(true) };
+  
+  const mockInventoryService = {
+    getInventoriesByVariantIds: jest.fn(),
+    deductStockAndLog: jest.fn(),
+    restoreStockAndLog: jest.fn(),
+  };
+
+  const mockVouchersService = {
+    validateAndGetVoucher: jest.fn(),
+    applyVoucher: jest.fn(),
+    restoreVoucher: jest.fn(),
+  };
+
+  const mockCartsService = {
+    getCartForCheckout: jest.fn(),
+    getCacheKey: jest.fn().mockReturnValue('cart_user-1_v'),
+  };
+
+  // Dữ liệu mẫu (Fixtures)
+  const userId = 'user-1';
+  const orderId = 'order-1';
+  const mockCart: any = {
     id: 'cart-1',
-    userId: mockUserId,
     cartItems: [
       {
-        variantId: mockVariantId,
-        quantity: 2,
-        variant: {
-          name: 'Áo thun',
-          product: { price: 100000 },
-        },
+        variantId: 'var-1',
+        variant: { sku: 'SKU-01', name: 'Size L', product: { name: 'Áo Thun' } },
       },
     ],
-  };
-
-  const mockInventories = [
-    { id: 'inv-1', variantId: mockVariantId, quantity: 1, warehouseId: 'wh-1' },
-    { id: 'inv-2', variantId: mockVariantId, quantity: 5, warehouseId: 'wh-2' },
-  ];
-
-  const mockVoucher = {
-    id: mockVoucherId,
-    code: 'DISCOUNT50K',
-    value: 50000,
-    count: 0,
-    limit: 100,
-  };
-
-  // Đối tượng dùng làm Transaction Client (giả lập các hàm Prisma gọi bên trong $transaction)
-  const mockPrismaTransactionClient = {
-    order: { create: jest.fn() },
-    inventory: { updateMany: jest.fn() },
-    inventoryTransaction: { create: jest.fn() },
-    voucher: { updateMany: jest.fn() },
-    voucherUsage: { create: jest.fn() },
-    cartItem: { deleteMany: jest.fn() },
-  };
-
-  // --- MOCK SERVICES ---
-  const mockPrismaService = {
-    cart: { findFirst: jest.fn() },
-    inventory: { findMany: jest.fn() },
-    voucher: { findUnique: jest.fn() },
-    order: { findMany: jest.fn() },
-    // Giả lập transaction: Gọi ngay callback và truyền mockPrismaTransactionClient vào
-    $transaction: jest.fn().mockImplementation(async (cb) => cb(mockPrismaTransactionClient)),
-  };
-
-  const mockEventEmitter = {
-    emit: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -74,165 +81,167 @@ describe('OrdersService', () => {
         OrdersService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: EventEmitter2, useValue: mockEventEmitter },
+        { provide: RedisCacheService, useValue: mockCacheService },
+        { provide: InventoryService, useValue: mockInventoryService },
+        { provide: VouchersService, useValue: mockVouchersService },
+        { provide: CartsService, useValue: mockCartsService },
       ],
     }).compile();
 
     service = module.get<OrdersService>(OrdersService);
     prisma = module.get<PrismaService>(PrismaService);
     eventEmitter = module.get<EventEmitter2>(EventEmitter2);
-  });
+    cacheService = module.get<RedisCacheService>(RedisCacheService);
+    inventoryService = module.get<InventoryService>(InventoryService);
+    voucherService = module.get<VouchersService>(VouchersService);
+    cartsService = module.get<CartsService>(CartsService);
 
-  afterEach(() => {
     jest.clearAllMocks();
+
+    // 2. MOCK CÁC STATIC METHODS TỪ LỚP DOMAIN
+    jest.spyOn(InventoryAllocation, 'allocate').mockReturnValue([
+      { variantId: 'var-1', quantity: 2, price: 100, inventoryId: 'inv-1' },
+    ]);
+    jest.spyOn(PriceCalculation, 'calculate').mockReturnValue({
+      totalAmount: 200,
+      appliedVoucherId: 'voucher-1',
+      voucherLimit: 1,
+    });
+    jest.spyOn(StateTransition, 'validateTransition').mockImplementation(() => {});
   });
 
-  it('should be defined', () => {
+  afterAll(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('Service phải được khởi tạo thành công', () => {
     expect(service).toBeDefined();
   });
 
-  // ==========================================================
-  // GET MY ORDERS
-  // ==========================================================
-  describe('getMyOrders', () => {
-    it('should return a list of orders for the user', async () => {
-      const mockOrders = [{ id: mockOrderId, totalAmount: 200000 }];
-      mockPrismaService.order.findMany.mockResolvedValue(mockOrders);
+  // ===================================================================
+  // TEST SUITE: createOrder
+  // ===================================================================
+  describe('createOrder', () => {
+    const dto = { voucherCode: 'SALE10' };
 
-      const result = await service.getMyOrders(mockUserId);
+    it('Nên thực thi giao dịch tạo đơn hàng, trừ kho, áp voucher, xóa giỏ và bắn sự kiện', async () => {
+      // Chuẩn bị Mock dữ liệu trả về
+      mockCartsService.getCartForCheckout.mockResolvedValue(mockCart);
+      mockInventoryService.getInventoriesByVariantIds.mockResolvedValue([]);
+      const mockVoucher = { id: 'voucher-1' };
+      mockVouchersService.validateAndGetVoucher.mockResolvedValue(mockVoucher);
+      
+      const createdOrder = { id: orderId, userId };
+      mockPrismaService.db.order.create.mockResolvedValue(createdOrder);
 
-      expect(prisma.order.findMany).toHaveBeenCalledWith({
-        where: { userId: mockUserId },
-        include: expect.any(Object),
-        orderBy: { createdAt: 'desc' },
-      });
-      expect(result).toEqual(mockOrders);
+      // Thực thi
+      const result = await service.createOrder(userId, dto);
+
+      // Kiểm tra luồng dữ liệu (Data flow)
+      expect(result).toEqual(createdOrder);
+      expect(voucherService.validateAndGetVoucher).toHaveBeenCalledWith('SALE10');
+      
+      // Kiểm tra Transaction thực thi đúng các lệnh nội bộ
+      expect(prisma.db.order.create).toHaveBeenCalled();
+      expect(inventoryService.deductStockAndLog).toHaveBeenCalledWith(
+        mockPrismaService.db, // tx mock
+        expect.any(Array),
+        userId
+      );
+      expect(voucherService.applyVoucher).toHaveBeenCalledWith(
+        mockPrismaService.db, // tx mock
+        'voucher-1',
+        1, // voucherLimit
+        userId,
+        orderId
+      );
+      expect(prisma.db.cartItem.deleteMany).toHaveBeenCalledWith({ where: { cartId: mockCart.id } });
+
+      // Kiểm tra Side-Effects (Events & Cache)
+      expect(eventEmitter.emit).toHaveBeenCalledWith('order.created', expect.any(Object));
+      expect(cacheService.del).toHaveBeenCalledWith('cart_user-1_v');
+    });
+
+    it('Nên ném BadRequestException khi buildOrderItemsSnapshot nếu sản phẩm trong giỏ bị lỗi', async () => {
+      // Giả lập một lỗi logic: cartItem không có variant (bị xóa khỏi DB trước đó)
+      const invalidCart = { id: 'cart-1', cartItems: [{ variantId: 'var-1', variant: null }] };
+      mockCartsService.getCartForCheckout.mockResolvedValue(invalidCart);
+      mockInventoryService.getInventoriesByVariantIds.mockResolvedValue([]);
+
+      await expect(service.createOrder(userId, dto)).rejects.toThrow(BadRequestException);
     });
   });
 
-  // ==========================================================
-  // CREATE ORDER
-  // ==========================================================
-  describe('createOrder', () => {
-    it('should throw BadRequestException if cart is empty or not found', async () => {
-      mockPrismaService.cart.findFirst.mockResolvedValue(null);
-      await expect(service.createOrder(mockUserId, {})).rejects.toThrow('Giỏ hàng của bạn đang trống!');
+  // ===================================================================
+  // TEST SUITE: cancelOrder
+  // ===================================================================
+  describe('cancelOrder', () => {
+    const mockOrder: any = {
+      id: orderId,
+      userId,
+      status: OrderStatus.PENDING,
+      orderItems: [{ inventoryId: 'inv-1', quantity: 2 }],
+    };
 
-      mockPrismaService.cart.findFirst.mockResolvedValue({ cartItems: [] });
-      await expect(service.createOrder(mockUserId, {})).rejects.toThrow('Giỏ hàng của bạn đang trống!');
+    it('Nên ném NotFoundException nếu đơn hàng không tồn tại hoặc sai userId', async () => {
+      mockPrismaService.db.order.findUnique.mockResolvedValue(null);
+      await expect(service.cancelOrder(userId, orderId)).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw BadRequestException if inventory is insufficient', async () => {
-      mockPrismaService.cart.findFirst.mockResolvedValue(mockCart);
-      // Giả lập kho chỉ còn 1 cái, trong khi cart cần 2
-      mockPrismaService.inventory.findMany.mockResolvedValue([{ ...mockInventories[0] }]); 
+    it('Nên ném BadRequestException nếu đơn hàng KHÔNG ở trạng thái PENDING', async () => {
+      mockPrismaService.db.order.findUnique.mockResolvedValue({ ...mockOrder, status: OrderStatus.PROCESSING });
+      await expect(service.cancelOrder(userId, orderId)).rejects.toThrow(BadRequestException);
+    });
 
-      await expect(service.createOrder(mockUserId, {})).rejects.toThrow(
-        'Sản phẩm Áo thun không đủ tồn kho trên toàn hệ thống!'
+    it('Nên hủy đơn, hoàn kho, hoàn voucher và bắn sự kiện thành công', async () => {
+      mockPrismaService.db.order.findUnique.mockResolvedValue(mockOrder);
+      const cancelledOrder = { id: orderId, userId, status: OrderStatus.CANCELLED };
+      mockPrismaService.db.order.update.mockResolvedValue(cancelledOrder);
+
+      const result = await service.cancelOrder(userId, orderId);
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual(cancelledOrder);
+
+      // Kiểm tra Transaction phục hồi tài nguyên
+      expect(inventoryService.restoreStockAndLog).toHaveBeenCalledWith(
+        mockPrismaService.db,
+        [{ inventoryId: 'inv-1', quantity: 2 }],
+        userId
       );
+      expect(voucherService.restoreVoucher).toHaveBeenCalledWith(mockPrismaService.db, orderId, userId);
+      
+      // Kiểm tra cập nhật DB và Event
+      expect(prisma.db.order.update).toHaveBeenCalledWith({
+        where: { id: orderId },
+        data: { status: OrderStatus.CANCELLED },
+      });
+      expect(eventEmitter.emit).toHaveBeenCalledWith('order.cancelled', expect.any(Object));
+    });
+  });
+
+  // ===================================================================
+  // TEST SUITE: updateOrderStatus
+  // ===================================================================
+  describe('updateOrderStatus', () => {
+    it('Nên ném NotFoundException nếu đơn hàng không tồn tại', async () => {
+      mockPrismaService.db.order.findUnique.mockResolvedValue(null);
+      await expect(service.updateOrderStatus(orderId, OrderStatus.DELIVERED)).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw NotFoundException if voucher is provided but not found', async () => {
-      mockPrismaService.cart.findFirst.mockResolvedValue(mockCart);
-      mockPrismaService.inventory.findMany.mockResolvedValue(mockInventories); // Total 6 > 2
-      mockPrismaService.voucher.findUnique.mockResolvedValue(null);
+    it('Nên xác thực State Transition, cập nhật trạng thái và bắn thông báo', async () => {
+      const mockOrder = { id: orderId, userId, status: OrderStatus.SHIPPING };
+      mockPrismaService.db.order.findUnique.mockResolvedValue(mockOrder);
+      mockPrismaService.db.order.update.mockResolvedValue({ ...mockOrder, status: OrderStatus.DELIVERED });
 
-      await expect(service.createOrder(mockUserId, { voucherCode: 'INVALID' })).rejects.toThrow(
-        'Mã giảm giá không tồn tại'
-      );
-    });
+      const result = await service.updateOrderStatus(orderId, OrderStatus.DELIVERED);
 
-    it('should throw BadRequestException if voucher limit is reached', async () => {
-      mockPrismaService.cart.findFirst.mockResolvedValue(mockCart);
-      mockPrismaService.inventory.findMany.mockResolvedValue(mockInventories);
-      // Giả lập voucher đã dùng 100/100
-      mockPrismaService.voucher.findUnique.mockResolvedValue({ ...mockVoucher, count: 100 }); 
-
-      await expect(service.createOrder(mockUserId, { voucherCode: 'DISCOUNT50K' })).rejects.toThrow(
-        'Mã giảm giá đã hết lượt sử dụng'
-      );
-    });
-
-    describe('Transaction Process', () => {
-      beforeEach(() => {
-        mockPrismaService.cart.findFirst.mockResolvedValue(mockCart);
-        mockPrismaService.inventory.findMany.mockResolvedValue([
-          { id: 'inv-1', variantId: mockVariantId, quantity: 1 }, 
-          { id: 'inv-2', variantId: mockVariantId, quantity: 5 }, 
-        ]);
-        
-        // Mocks for successful transaction operations
-        mockPrismaTransactionClient.order.create.mockResolvedValue({ id: mockOrderId, userId: mockUserId });
-        mockPrismaTransactionClient.inventory.updateMany.mockResolvedValue({ count: 1 }); // Thành công
-        mockPrismaTransactionClient.voucher.updateMany.mockResolvedValue({ count: 1 }); // Thành công
-      });
-
-      it('should create order successfully without voucher', async () => {
-        const result = await service.createOrder(mockUserId, {});
-
-        // 1. Transaction called
-        expect(prisma.$transaction).toHaveBeenCalled();
-
-        // 2. Order created with correct amount (2 items * 100k = 200k)
-        expect(mockPrismaTransactionClient.order.create).toHaveBeenCalledWith(
-          expect.objectContaining({
-            data: expect.objectContaining({ totalAmount: 200000 }),
-          })
-        );
-
-        // 3. Inventory deducted correctly (1 from inv-1, 1 from inv-2)
-        expect(mockPrismaTransactionClient.inventory.updateMany).toHaveBeenCalledTimes(2);
-        
-        // 4. Cart cleared
-        expect(mockPrismaTransactionClient.cartItem.deleteMany).toHaveBeenCalledWith({
-          where: { cartId: mockCart.id },
-        });
-
-        // 5. Event emitted
-        expect(eventEmitter.emit).toHaveBeenCalledWith('order.created', {
-          userId: mockUserId,
-          content: `Đơn hàng mã số ${mockOrderId} đã được xác nhận`,
-        });
-
-        expect(result).toEqual({ id: mockOrderId, userId: mockUserId });
-      });
-
-      it('should throw BadRequestException if inventory race condition happens (count === 0)', async () => {
-        // Giả lập lệnh update kho bị fail (do lúc truy vấn thì có, lúc update bị người khác mua mất)
-        mockPrismaTransactionClient.inventory.updateMany.mockResolvedValueOnce({ count: 0 });
-
-        await expect(service.createOrder(mockUserId, {})).rejects.toThrow(
-          'Lỗi tương tranh: Có sản phẩm trong giỏ vừa bị người khác mua hết!'
-        );
-      });
-
-      it('should create order successfully with voucher', async () => {
-        mockPrismaService.voucher.findUnique.mockResolvedValue(mockVoucher);
-        
-        await service.createOrder(mockUserId, { voucherCode: 'DISCOUNT50K' });
-
-        // Amount should be 200k - 50k = 150k
-        expect(mockPrismaTransactionClient.order.create).toHaveBeenCalledWith(
-          expect.objectContaining({
-            data: expect.objectContaining({ totalAmount: 150000 }),
-          })
-        );
-
-        // Voucher usage tracked
-        expect(mockPrismaTransactionClient.voucher.updateMany).toHaveBeenCalled();
-        expect(mockPrismaTransactionClient.voucherUsage.create).toHaveBeenCalledWith({
-          data: { voucherId: mockVoucherId, userId: mockUserId, orderId: mockOrderId },
-        });
-      });
-
-      it('should throw BadRequestException if voucher race condition happens (count === 0)', async () => {
-        mockPrismaService.voucher.findUnique.mockResolvedValue(mockVoucher);
-        // Giả lập lệnh update voucher bị fail (do người khác vừa dùng slot cuối cùng)
-        mockPrismaTransactionClient.voucher.updateMany.mockResolvedValue({ count: 0 });
-
-        await expect(service.createOrder(mockUserId, { voucherCode: 'DISCOUNT50K' })).rejects.toThrow(
-          'Mã giảm giá vừa chạm mức giới hạn, vui lòng bỏ mã ra khỏi giỏ!'
-        );
-      });
+      // Xác minh hàm static của Domain Logic đã được gọi để kiểm tra tính hợp lệ
+      expect(StateTransition.validateTransition).toHaveBeenCalledWith(OrderStatus.SHIPPING, OrderStatus.DELIVERED);
+      
+      expect(result.status).toEqual(OrderStatus.DELIVERED);
+      expect(prisma.db.order.update).toHaveBeenCalled();
+      expect(eventEmitter.emit).toHaveBeenCalledWith('order.statusUpdated', expect.any(Object));
     });
   });
 });

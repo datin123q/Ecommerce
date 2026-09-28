@@ -9,6 +9,13 @@ import { ApiHeader } from '@nestjs/swagger';
 
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
+import { Role } from '@prisma/client';
+
+interface AuthenticatedUser {
+  id: string;
+  email: string;
+  role: Role;
+}
 
 @ApiTags('Payments (Thanh toán)')
 @Controller('payments')
@@ -26,7 +33,7 @@ export class PaymentsController {
   })
   @UseInterceptors(IdempotencyInterceptor)
   async createIntent(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreatePaymentDto
   ) {
     return this.paymentsService.createPaymentIntent(user.id, dto);

@@ -12,6 +12,7 @@ export class VouchersService {
     private readonly eventEmitter: EventEmitter2
   ) {}
 
+  // PUBLIC API
   async create(createVoucherDto: CreateVoucherDto, adminId: string) {
     const existing = await this.prisma.db.voucher.findUnique({
       where: { code: createVoucherDto.code },
@@ -22,7 +23,7 @@ export class VouchersService {
       data: createVoucherDto, 
     });
     
-    this.postAuditEvent('voucher.created', adminId, 'CREATE', newVoucher.id, null, newVoucher);
+    this.emitAuditEvent('voucher.created', adminId, 'CREATE', newVoucher.id, null, newVoucher);
     return newVoucher;
   }
 
@@ -31,13 +32,7 @@ export class VouchersService {
   }
 
   async updateVoucher(voucherId: string, updateVoucherDto: UpdateVoucherDto, adminId: string) {
-    const oldVoucher = await this.prisma.db.voucher.findUnique({ 
-      where: { id: voucherId } 
-    });
-
-    if (!oldVoucher) {
-      throw new NotFoundException(`Không tìm thấy voucher với id ${voucherId}`);
-    }
+    const oldVoucher = await this.getVoucherByIdOrThrow(voucherId);
 
     const newVoucher = await this.prisma.db.voucher.update({
       where: { id: voucherId },
@@ -47,25 +42,19 @@ export class VouchersService {
       }
     });
 
-    this.postAuditEvent('voucher.update', adminId, 'UPDATE', voucherId, oldVoucher, newVoucher);
+    this.emitAuditEvent('voucher.update', adminId, 'UPDATE', voucherId, oldVoucher, newVoucher);
     return newVoucher;
   }
 
   async remove(voucherId: string, adminId: string) {
-    const oldVoucher = await this.prisma.db.voucher.findUnique({ 
-      where: { id: voucherId } 
-    });
-
-    if (!oldVoucher) {
-      throw new NotFoundException(`Không tìm thấy voucher với id ${voucherId}`);
-    }
+    const oldVoucher = await this.getVoucherByIdOrThrow(voucherId);
 
     const newVoucher = await this.prisma.db.voucher.update({
       where: { id: voucherId },
       data: { limit: 0 } 
     });
 
-    this.postAuditEvent('voucher.delete', adminId, 'DELETE', voucherId, oldVoucher, newVoucher);
+    this.emitAuditEvent('voucher.delete', adminId, 'DELETE', voucherId, oldVoucher, newVoucher);
     return newVoucher;
   }
 
@@ -78,7 +67,7 @@ export class VouchersService {
       throw new NotFoundException('Mã giảm giá không tồn tại hoặc đã hết hạn');
     }
 
-    if (  voucher.count >= voucher.limit) {
+    if (voucher.count >= voucher.limit) {
       throw new BadRequestException('Mã giảm giá đã hết lượt sử dụng');
     }
         
@@ -86,7 +75,6 @@ export class VouchersService {
   }
 
   async applyVoucher(tx: Prisma.TransactionClient, voucherId: string, limit: number, userId: string, orderId: string) {
-
     const updateVoucher = await tx.voucher.updateMany({
       where: { id: voucherId, count: { lt: limit } } ,
       data: { count: { increment: 1 } },
@@ -104,19 +92,32 @@ export class VouchersService {
       where: { orderId, userId },
     });
 
-    if (voucherUsage) {
-      await tx.voucher.update({
-        where: { id: voucherUsage.voucherId },
-        data: { count: { decrement: 1 } },
-      });
+    if (!voucherUsage) return;
 
-      await tx.voucherUsage.delete({
-        where: { id: voucherUsage.id },
-      });
-    }
+    await tx.voucher.update({
+      where: { id: voucherUsage.voucherId },
+      data: { count: { decrement: 1 } },
+    });
+
+    await tx.voucherUsage.delete({
+      where: { id: voucherUsage.id },
+    });
   }
 
-  private postAuditEvent(eventName: string, actorId: string, action: string, entityId: string, oldValue: unknown, newValue: unknown) {
+  // PRIVATE HELPER METHODS
+  private async getVoucherByIdOrThrow(voucherId: string) {
+    const voucher = await this.prisma.db.voucher.findUnique({ 
+      where: { id: voucherId } 
+    });
+
+    if (!voucher) {
+      throw new NotFoundException(`Không tìm thấy voucher với id ${voucherId}`);
+    }
+
+    return voucher;
+  }
+
+  private emitAuditEvent(eventName: string, actorId: string, action: string, entityId: string, oldValue: unknown, newValue: unknown) {
     this.eventEmitter.emit(eventName, {
       actorId,
       action,

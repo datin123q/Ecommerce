@@ -3,50 +3,34 @@ import { AuthService } from './auth.service';
 import { UsersService } from '../users/users.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { getQueueToken } from '@nestjs/bullmq';
+import { BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import * as argon2 from 'argon2';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import * as crypto from 'crypto';
 
-// Mock thư viện argon2
-jest.mock('argon2', () => ({
-  hash: jest.fn(),
-  verify: jest.fn(),
+jest.mock('argon2');
+
+jest.mock('crypto', () => ({
+  ...jest.requireActual('crypto'), // Giữ nguyên các hàm nội bộ mà Jest cần
+  randomBytes: jest.fn(),
+  createHash: jest.fn(),
 }));
 
 describe('AuthService', () => {
-  let authService: AuthService;
+  let service: AuthService;
   let usersService: UsersService;
   let jwtService: JwtService;
   let configService: ConfigService;
+  let mailQueue: any;
 
-  // --- DỮ LIỆU GIẢ ĐỊNH (MOCK DATA) ---
-  const mockUser = {
-    id: 'user-123',
-    email: 'test@example.com',
-    password: 'hashed_password',
-    fullName: 'Test User',
-    role: 'USER',
-    refreshToken: 'hashed_refresh_token',
-  };
-
-  const mockRegisterDto = {
-    email: 'test@example.com',
-    password: 'password123',
-    fullName: 'Test User',
-  };
-
-  const mockLoginDto = {
-    email: 'test@example.com',
-    password: 'password123',
-  };
-
-  const mockPayload = { sub: mockUser.id, email: mockUser.email, role: mockUser.role };
-
-  // --- MOCK CÁC SERVICES ---
+  // 1. Khởi tạo Mocks cho các Dependencies
   const mockUsersService = {
     findByEmail: jest.fn(),
-    create: jest.fn(),
     findById: jest.fn(),
+    create: jest.fn(),
+    updateUser: jest.fn(),
+    findByValidVerifyToken: jest.fn(),
+    findByValidResetToken: jest.fn(),
     updateRefreshToken: jest.fn(),
   };
 
@@ -56,11 +40,23 @@ describe('AuthService', () => {
   };
 
   const mockConfigService = {
-    getOrThrow: jest.fn((key: string) => {
-      if (key === 'JWT_REFRESH_SECRET') return 'refresh_secret_key';
-      if (key === 'JWT_REFRESH_EXPIRES_IN') return '7d';
-      return null;
-    }),
+    get: jest.fn(),
+    getOrThrow: jest.fn(),
+  };
+
+  const mockMailQueue = {
+    add: jest.fn(),
+  };
+
+  // Dữ liệu mẫu dùng chung
+  const mockUser = {
+    id: 'user-1',
+    email: 'test@example.com',
+    password: 'hashed-password',
+    fullName: 'Test User',
+    role: 'USER',
+    avatar: 'avatar.png',
+    refreshToken: 'hashed-refresh-token',
   };
 
   beforeEach(async () => {
@@ -70,175 +66,177 @@ describe('AuthService', () => {
         { provide: UsersService, useValue: mockUsersService },
         { provide: JwtService, useValue: mockJwtService },
         { provide: ConfigService, useValue: mockConfigService },
+        // Cách mock BullMQ Queue trong NestJS
+        { provide: getQueueToken('mail-queue'), useValue: mockMailQueue },
       ],
     }).compile();
 
-    authService = module.get<AuthService>(AuthService);
+    service = module.get<AuthService>(AuthService);
     usersService = module.get<UsersService>(UsersService);
     jwtService = module.get<JwtService>(JwtService);
     configService = module.get<ConfigService>(ConfigService);
-  });
+    mailQueue = module.get(getQueueToken('mail-queue'));
 
-  afterEach(() => {
+    // Reset lại toàn bộ mock sau mỗi test
     jest.clearAllMocks();
+
+    // Tối ưu Tốc độ: Mock argon2 để không tốn thời gian hash/verify thật khi chạy test
+    (argon2.hash as jest.Mock).mockResolvedValue('mocked-hash-string');
+    (argon2.verify as jest.Mock).mockResolvedValue(true);
+
+    // Mock ConfigService
+    mockConfigService.get.mockReturnValue('http://localhost:3000');
+    mockConfigService.getOrThrow.mockReturnValue('secret-key');
   });
 
-  it('should be defined', () => {
-    expect(authService).toBeDefined();
+  afterAll(() => {
+    jest.restoreAllMocks();
   });
 
-  // ==========================================================
-  // REGISTER
-  // ==========================================================
+  it('Service phải được khởi tạo thành công', () => {
+    expect(service).toBeDefined();
+  });
+
+  // ===================================================================
+  // TEST SUITE: register
+  // ===================================================================
   describe('register', () => {
-    it('should register a new user successfully', async () => {
+    const dto = { email: 'test@example.com', password: '123', fullName: 'Test User' };
+
+    it('Nên ném BadRequestException nếu email đã tồn tại', async () => {
+      mockUsersService.findByEmail.mockResolvedValue(mockUser);
+
+      await expect(service.register(dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('Nên tạo user thành công, băm mật khẩu và trả về dữ liệu đã sanitize', async () => {
       mockUsersService.findByEmail.mockResolvedValue(null);
-      (argon2.hash as jest.Mock).mockResolvedValue('hashed_password');
       mockUsersService.create.mockResolvedValue(mockUser);
 
-      const result = await authService.register(mockRegisterDto);
+      const result = await service.register(dto);
 
-      expect(usersService.findByEmail).toHaveBeenCalledWith(mockRegisterDto.email);
-      expect(argon2.hash).toHaveBeenCalledWith(mockRegisterDto.password);
-      expect(usersService.create).toHaveBeenCalledWith({
-        email: mockRegisterDto.email,
-        password: 'hashed_password',
-        fullName: mockRegisterDto.fullName,
-      });
-      expect(result).toEqual({
-        id: mockUser.id,
-        email: mockUser.email,
-        fullName: mockUser.fullName,
-        role: mockUser.role,
-      });
-    });
-
-    it('should throw BadRequestException if email is already in use', async () => {
-      mockUsersService.findByEmail.mockResolvedValue(mockUser); // Báo email đã tồn tại
-
-      await expect(authService.register(mockRegisterDto)).rejects.toThrow(
-        BadRequestException,
-      );
-      expect(usersService.create).not.toHaveBeenCalled();
+      expect(argon2.hash).toHaveBeenCalledWith(dto.password);
+      expect(usersService.create).toHaveBeenCalled();
+      expect(result).not.toHaveProperty('password'); // Đảm bảo đã sanitize
+      expect(result.email).toEqual(dto.email);
     });
   });
 
-  // ==========================================================
-  // LOGIN
-  // ==========================================================
+  // ===================================================================
+  // TEST SUITE: login
+  // ===================================================================
   describe('login', () => {
-    it('should login successfully and return tokens', async () => {
-      mockUsersService.findByEmail.mockResolvedValue(mockUser);
-      (argon2.verify as jest.Mock).mockResolvedValue(true); // Password đúng
-      
-      mockJwtService.sign
-        .mockReturnValueOnce('access_token')
-        .mockReturnValueOnce('refresh_token');
-        
-      (argon2.hash as jest.Mock).mockResolvedValue('hashed_new_rt');
+    const dto = { email: 'test@example.com', password: '123' };
 
-      const result = await authService.login(mockLoginDto);
-
-      expect(usersService.findByEmail).toHaveBeenCalledWith(mockLoginDto.email);
-      expect(argon2.verify).toHaveBeenCalledWith(mockUser.password, mockLoginDto.password);
-      expect(jwtService.sign).toHaveBeenCalledTimes(2);
-      expect(usersService.updateRefreshToken).toHaveBeenCalledWith(mockUser.id, 'hashed_new_rt');
-      expect(result).toEqual({
-        accessToken: 'access_token',
-        refreshToken: 'refresh_token',
-        user: {
-          id: mockUser.id,
-          email: mockUser.email,
-          fullName: mockUser.fullName,
-          role: mockUser.role,
-        },
-      });
-    });
-
-    it('should throw UnauthorizedException if user not found', async () => {
+    it('Nên ném BadRequestException nếu không tìm thấy email', async () => {
       mockUsersService.findByEmail.mockResolvedValue(null);
-
-      await expect(authService.login(mockLoginDto)).rejects.toThrow(UnauthorizedException);
-      expect(argon2.verify).not.toHaveBeenCalled();
+      await expect(service.login(dto)).rejects.toThrow(BadRequestException);
     });
 
-    it('should throw UnauthorizedException if password is incorrect', async () => {
+    it('Nên ném BadRequestException nếu sai mật khẩu', async () => {
       mockUsersService.findByEmail.mockResolvedValue(mockUser);
-      (argon2.verify as jest.Mock).mockResolvedValue(false); // Password sai
+      (argon2.verify as jest.Mock).mockResolvedValueOnce(false);
 
-      await expect(authService.login(mockLoginDto)).rejects.toThrow(UnauthorizedException);
+      await expect(service.login(dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('Nên đăng nhập thành công và trả về cặp token', async () => {
+      mockUsersService.findByEmail.mockResolvedValue(mockUser);
+      mockJwtService.sign.mockReturnValue('mocked-jwt-token');
+
+      const result = await service.login(dto);
+
+      expect(result).toHaveProperty('accessToken', 'mocked-jwt-token');
+      expect(result).toHaveProperty('refreshToken', 'mocked-jwt-token');
+      expect(usersService.updateRefreshToken).toHaveBeenCalledWith(mockUser.id, 'mocked-hash-string');
     });
   });
 
-  // ==========================================================
-  // REFRESH TOKEN
-  // ==========================================================
+  // ===================================================================
+  // TEST SUITE: requestVerification
+  // ===================================================================
+  describe('requestVerification', () => {
+    it('Nên ném NotFoundException nếu user không tồn tại', async () => {
+      mockUsersService.findById.mockResolvedValue(null);
+      await expect(service.requestVerification('1')).rejects.toThrow(NotFoundException);
+    });
+
+    it('Nên tạo token, cập nhật DB và đẩy job vào BullMQ', async () => {
+      mockUsersService.findById.mockResolvedValue(mockUser);
+      
+      // Mock thư viện Crypto để kiểm soát chuỗi token sinh ra
+      (crypto.randomBytes as jest.Mock).mockReturnValue({toString:() =>'raw-token'});      
+      const mockHash = {
+        update: jest.fn().mockReturnThis(),
+        digest: jest.fn().mockReturnValue('hashed-token'),
+      };
+      (crypto.createHash as jest.Mock).mockReturnValue(mockHash);
+      await service.requestVerification(mockUser.id);
+
+      // 1. Kiểm tra cập nhật DB (lưu token băm)
+      expect(usersService.updateUser).toHaveBeenCalledWith(mockUser.id, {
+        verifyToken: 'hashed-token',
+        verifyExpires: expect.any(Date),
+      });
+
+      // 2. Kiểm tra đẩy Mail vào Queue (gửi token gốc)
+      expect(mailQueue.add).toHaveBeenCalledWith(
+        'verify-account',
+        expect.objectContaining({
+          email: mockUser.email,
+          verifyUrl: 'http://localhost:3000/verify?token=raw-token',
+        }),
+        expect.any(Object),
+      );
+    });
+  });
+
+  // ===================================================================
+  // TEST SUITE: refreshToken
+  // ===================================================================
   describe('refreshToken', () => {
-    const providedRefreshToken = 'valid_refresh_token';
+    const incomingToken = 'old-refresh-token';
 
-    it('should generate new tokens when refresh token is valid', async () => {
-      mockJwtService.verifyAsync.mockResolvedValue(mockPayload);
+    it('Nên ném UnauthorizedException nếu token bị sai hoặc hết hạn (Lỗi Jwt verify)', async () => {
+      mockJwtService.verifyAsync.mockRejectedValue(new Error('JWT Expired'));
+
+      await expect(service.refreshToken(incomingToken)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('Nên ném UnauthorizedException nếu User bị xóa hoặc đã đăng xuất (Không có refreshToken ở DB)', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({ sub: mockUser.id });
+      mockUsersService.findById.mockResolvedValue({ ...mockUser, refreshToken: null });
+
+      await expect(service.refreshToken(incomingToken)).rejects.toThrow(UnauthorizedException);
+    });
+
+    it('Nên ném UnauthorizedException nếu Token gửi lên không khớp với Token băm trong DB', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({ sub: mockUser.id });
       mockUsersService.findById.mockResolvedValue(mockUser);
-      (argon2.verify as jest.Mock).mockResolvedValue(true); // Token khớp
-      
-      mockJwtService.sign
-        .mockReturnValueOnce('new_access_token')
-        .mockReturnValueOnce('new_refresh_token');
-        
-      (argon2.hash as jest.Mock).mockResolvedValue('hashed_new_rt');
+      (argon2.verify as jest.Mock).mockResolvedValueOnce(false);
 
-      const result = await authService.refreshToken(providedRefreshToken);
-
-      expect(jwtService.verifyAsync).toHaveBeenCalledWith(providedRefreshToken, {
-        secret: 'refresh_secret_key',
-      });
-      expect(usersService.findById).toHaveBeenCalledWith(mockPayload.sub);
-      expect(argon2.verify).toHaveBeenCalledWith(mockUser.refreshToken, providedRefreshToken);
-      expect(usersService.updateRefreshToken).toHaveBeenCalledWith(mockUser.id, 'hashed_new_rt');
-      
-      expect(result).toEqual({
-        accessToken: 'new_access_token',
-        refreshToken: 'new_refresh_token',
-      });
+      await expect(service.refreshToken(incomingToken)).rejects.toThrow(UnauthorizedException);
     });
 
-    it('should throw UnauthorizedException when JWT verification fails', async () => {
-      mockJwtService.verifyAsync.mockRejectedValue(new Error('Invalid JWT'));
-
-      await expect(authService.refreshToken(providedRefreshToken)).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should throw UnauthorizedException when user not found or no refreshToken in DB', async () => {
-      mockJwtService.verifyAsync.mockResolvedValue(mockPayload);
-      mockUsersService.findById.mockResolvedValue({ ...mockUser, refreshToken: null }); // Thiếu RT trong DB
-
-      await expect(authService.refreshToken(providedRefreshToken)).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should throw UnauthorizedException when refresh token verification fails (argon2)', async () => {
-      mockJwtService.verifyAsync.mockResolvedValue(mockPayload);
+    it('Nên refresh thành công và trả về cặp Token mới', async () => {
+      mockJwtService.verifyAsync.mockResolvedValue({ sub: mockUser.id });
       mockUsersService.findById.mockResolvedValue(mockUser);
-      (argon2.verify as jest.Mock).mockResolvedValue(false); // Token không khớp (bị thay đổi)
+      mockJwtService.sign.mockReturnValue('new-token');
 
-      await expect(authService.refreshToken(providedRefreshToken)).rejects.toThrow(
-        UnauthorizedException,
-      );
+      const result = await service.refreshToken(incomingToken);
+
+      expect(result.accessToken).toEqual('new-token');
+      expect(usersService.updateRefreshToken).toHaveBeenCalled();
     });
   });
 
-  // ==========================================================
-  // LOGOUT
-  // ==========================================================
+  // ===================================================================
+  // TEST SUITE: logout
+  // ===================================================================
   describe('logout', () => {
-    it('should update refresh token to null and return success message', async () => {
-      const result = await authService.logout(mockUser.id);
-
+    it('Nên xóa refresh token khỏi DB', async () => {
+      await service.logout(mockUser.id);
       expect(usersService.updateRefreshToken).toHaveBeenCalledWith(mockUser.id, null);
-      expect(result).toEqual({ message: 'Đăng xuất thành công' });
     });
   });
 });

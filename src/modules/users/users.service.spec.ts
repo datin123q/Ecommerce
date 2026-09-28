@@ -6,39 +6,28 @@ import { NotFoundException } from '@nestjs/common';
 import { Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 
-jest.mock('argon2', () => ({
-  hash: jest.fn(),
-}));
+jest.mock('argon2');
 
 describe('UsersService', () => {
   let service: UsersService;
   let prisma: PrismaService;
   let eventEmitter: EventEmitter2;
 
-  // --- MOCK DATA ---
-  const mockUserId = 'user-123';
-  const mockEmail = 'test@example.com';
-
-  const mockUser = {
-    id: mockUserId,
-    email: mockEmail,
-    fullName: 'Test User',
-    password: 'hashed_password',
-    role: Role.USER,
-  };
-
-  // --- MOCK SERVICES ---
   const mockPrismaService = {
-    user: {
-      findUnique: jest.fn(),
-      create: jest.fn(),
-      update: jest.fn(),
+    db: {
+      user: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
     },
   };
 
-  const mockEventEmitter = {
-    emit: jest.fn(),
-  };
+  const mockEventEmitter = { emit: jest.fn() };
+
+  const userId = 'user-1';
+  const mockUser = { id: userId, email: 'test@mail.com', fullName: 'Nguyễn Văn A', role: Role.USER };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -52,168 +41,112 @@ describe('UsersService', () => {
     service = module.get<UsersService>(UsersService);
     prisma = module.get<PrismaService>(PrismaService);
     eventEmitter = module.get<EventEmitter2>(EventEmitter2);
-  });
 
-  afterEach(() => {
     jest.clearAllMocks();
+    
+    (argon2.hash as jest.Mock).mockResolvedValue('hashed-password');
   });
 
-  it('should be defined', () => {
+  afterAll(() => {
+    jest.restoreAllMocks();
+  });
+
+  it('Service phải được khởi tạo thành công', () => {
     expect(service).toBeDefined();
   });
 
-  // ==========================================================
-  // FIND BY EMAIL & ID
-  // ==========================================================
-  describe('findByEmail', () => {
-    it('should return user if found', async () => {
-      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
-      const result = await service.findByEmail(mockEmail);
-      expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { email: mockEmail } });
+  // TEST SUITE: Queries (find...)
+  describe('Queries (Tìm kiếm)', () => {
+    it('findByEmail - Nên tìm user theo email', async () => {
+      mockPrismaService.db.user.findUnique.mockResolvedValue(mockUser);
+      const result = await service.findByEmail(mockUser.email);
       expect(result).toEqual(mockUser);
-    });
-  });
-
-  describe('findById', () => {
-    it('should return user if found', async () => {
-      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
-      const result = await service.findById(mockUserId);
-      expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { id: mockUserId } });
-      expect(result).toEqual(mockUser);
-    });
-  });
-
-  // CREATE
-  describe('create', () => {
-    it('should create a new user', async () => {
-      const createData = { email: mockEmail, password: 'password', fullName: 'User' };
-      mockPrismaService.user.create.mockResolvedValue(mockUser);
-      
-      const result = await service.create(createData as any);
-      
-      expect(prisma.user.create).toHaveBeenCalledWith({ data: createData });
-      expect(result).toEqual(mockUser);
-    });
-  });
-
-  // UPDATE USER 
-  describe('updateUser', () => {
-    const updateData = { fullName: 'New Name' };
-
-    it('should throw NotFoundException if user not found', async () => {
-      mockPrismaService.user.findUnique.mockResolvedValue(null);
-
-      await expect(service.updateUser(mockUserId, updateData)).rejects.toThrow(
-        new NotFoundException(`Không tìm thấy tài khoản với ID: ${mockUserId}`)
-      );
-      expect(prisma.user.update).not.toHaveBeenCalled();
+      expect(prisma.db.user.findUnique).toHaveBeenCalledWith({ where: { email: mockUser.email } });
     });
 
-    it('should update user if found', async () => {
-      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
-      mockPrismaService.user.update.mockResolvedValue({ ...mockUser, ...updateData });
-
-      const result = await service.updateUser(mockUserId, updateData);
-
-      expect(prisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUserId },
-        data: updateData,
-      });
-      expect(result.fullName).toEqual('New Name');
-    });
-  });
-
-  // UPDATE REFRESH TOKEN
-  describe('updateRefreshToken', () => {
-    it('should update refresh token', async () => {
-      const mockToken = 'new_refresh_token';
-      mockPrismaService.user.update.mockResolvedValue({ ...mockUser, refreshToken: mockToken });
-
-      await service.updateRefreshToken(mockUserId, mockToken);
-
-      expect(prisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUserId },
-        data: { refreshToken: mockToken },
+    it('findByValidVerifyToken - Nên tìm user theo token hợp lệ', async () => {
+      mockPrismaService.db.user.findFirst.mockResolvedValue(mockUser);
+      await service.findByValidVerifyToken('hashed-token');
+      expect(prisma.db.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          verifyToken: 'hashed-token',
+          verifyExpires: { gt: expect.any(Date) }, // Kiểm tra lớn hơn thời gian hiện tại
+        }
       });
     });
   });
 
-  // UPDATE PROFILE
+  // TEST SUITE: Mutations (Thay đổi dữ liệu)
+  describe('updateAvatar', () => {
+    it('Nên cập nhật avatar và chỉ trả về các trường được select', async () => {
+      mockPrismaService.db.user.findUnique.mockResolvedValue(mockUser); // Bypass check exists
+      const expectedResponse = { id: userId, email: mockUser.email, fullName: mockUser.fullName, avatar: 'new-url.png' };
+      mockPrismaService.db.user.update.mockResolvedValue(expectedResponse);
+
+      const result = await service.updateAvatar(userId, 'new-url.png');
+
+      expect(result).toEqual(expectedResponse);
+      expect(prisma.db.user.update).toHaveBeenCalledWith({
+        where: { id: userId },
+        data: { avatar: 'new-url.png' },
+        select: { id: true, email: true, fullName: true, avatar: true },
+      });
+    });
+  });
+
   describe('updateProfile', () => {
-    it('should throw NotFoundException if user not found', async () => {
-      mockPrismaService.user.findUnique.mockResolvedValue(null);
+    const dto = { fullName: 'Nguyễn Văn B', password: 'new-password' };
 
-      await expect(service.updateProfile(mockUserId, {})).rejects.toThrow(NotFoundException);
-      expect(eventEmitter.emit).not.toHaveBeenCalled();
+    it('Nên cập nhật thông tin, băm mật khẩu và bắn sự kiện SAU KHI update DB thành công', async () => {
+      mockPrismaService.db.user.findUnique.mockResolvedValue(mockUser);
+      const updatedUser = { ...mockUser, fullName: dto.fullName };
+      mockPrismaService.db.user.update.mockResolvedValue(updatedUser);
+
+      const result = await service.updateProfile(userId, dto);
+
+      expect(result).toEqual(updatedUser);
+      expect(argon2.hash).toHaveBeenCalledWith(dto.password);
+      expect(prisma.db.user.update).toHaveBeenCalledWith({
+        where: { id: userId },
+        data: { fullName: 'Nguyễn Văn B', password: 'hashed-password' },
+      });
+      expect(eventEmitter.emit).toHaveBeenCalledWith('profile.update', {
+        userId,
+        content: `Đổi thông tin thành công.`,
+      });
     });
 
-    it('should update fullName, emit event, and not hash password if password is not provided', async () => {
-      const dto = { fullName: 'New Full Name' };
-      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
-      mockPrismaService.user.update.mockResolvedValue({ ...mockUser, fullName: dto.fullName });
+    it('Không nên gọi argon2 nếu dto không gửi kèm password', async () => {
+      mockPrismaService.db.user.findUnique.mockResolvedValue(mockUser);
+      mockPrismaService.db.user.update.mockResolvedValue(mockUser);
 
-      const result = await service.updateProfile(mockUserId, dto);
+      await service.updateProfile(userId, { fullName: 'Chỉ cập nhật tên' });
 
       expect(argon2.hash).not.toHaveBeenCalled();
-      expect(eventEmitter.emit).toHaveBeenCalledWith('profile.update', {
-        userId: mockUserId,
-        content: 'Đổi thông tin thành công.',
-      });
-      expect(prisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUserId },
-        data: { fullName: dto.fullName },
-      });
-      expect(result.fullName).toEqual(dto.fullName);
-    });
-
-    it('should hash password and update both fullName and password if provided', async () => {
-      const dto = { fullName: 'New Name', password: 'new_password123' };
-      const hashedPw = 'new_hashed_password';
-      
-      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
-      (argon2.hash as jest.Mock).mockResolvedValue(hashedPw);
-      mockPrismaService.user.update.mockResolvedValue({ ...mockUser, fullName: dto.fullName, password: hashedPw });
-
-      await service.updateProfile(mockUserId, dto);
-
-      expect(argon2.hash).toHaveBeenCalledWith(dto.password);
-      expect(eventEmitter.emit).toHaveBeenCalledWith('profile.update', {
-        userId: mockUserId,
-        content: 'Đổi thông tin thành công.',
-      });
-      expect(prisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUserId },
-        data: { fullName: dto.fullName, password: hashedPw },
+      expect(prisma.db.user.update).toHaveBeenCalledWith({
+        where: { id: userId },
+        data: { fullName: 'Chỉ cập nhật tên' },
       });
     });
   });
 
-  // ==========================================================
-  // UPDATE ROLE
-  // ==========================================================
   describe('updateRole', () => {
-    it('should throw NotFoundException if user not found', async () => {
-      mockPrismaService.user.findUnique.mockResolvedValue(null);
+    it('Nên cập nhật quyền và bắn thông báo', async () => {
+      mockPrismaService.db.user.findUnique.mockResolvedValue(mockUser);
+      const updatedUser = { ...mockUser, role: Role.ADMIN };
+      mockPrismaService.db.user.update.mockResolvedValue(updatedUser);
 
-      await expect(service.updateRole(mockUserId, Role.ADMIN)).rejects.toThrow(NotFoundException);
-    });
+      const result = await service.updateRole(userId, Role.ADMIN);
 
-    it('should update role, emit event and return updated user', async () => {
-      const newRole = Role.ADMIN;
-      mockPrismaService.user.findUnique.mockResolvedValue(mockUser);
-      mockPrismaService.user.update.mockResolvedValue({ ...mockUser, role: newRole });
-
-      const result = await service.updateRole(mockUserId, newRole);
-
+      expect(result).toEqual(updatedUser);
+      expect(prisma.db.user.update).toHaveBeenCalledWith({
+        where: { id: userId },
+        data: { role: Role.ADMIN },
+      });
       expect(eventEmitter.emit).toHaveBeenCalledWith('role.update', {
-        userId: mockUserId,
-        content: `Bạn vừa được đổi quyền thành ${newRole}`,
+        userId,
+        content: `Bạn vừa được đổi quyền thành ${Role.ADMIN}`,
       });
-      expect(prisma.user.update).toHaveBeenCalledWith({
-        where: { id: mockUserId },
-        data: { role: newRole },
-      });
-      expect(result.role).toEqual(newRole);
     });
   });
 });

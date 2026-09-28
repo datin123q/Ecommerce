@@ -1,107 +1,25 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { Prisma } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { UpdateProfileDto } from './dto/user-update.dto';
 import * as argon2 from 'argon2';
-import { Role } from '@prisma/client';
-
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService, private readonly eventEmitter: EventEmitter2) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2
+  ) {}
 
   async findByEmail(email: string) {
-    return this.prisma.db.user.findUnique({
-      where: { email },
-    });
+    return this.prisma.db.user.findUnique({ where: { email } });
   }
 
   async findById(id: string) {
-    return this.prisma.db.user.findUnique({
-      where: { id },
-    });
+    return this.prisma.db.user.findUnique({ where: { id } });
   }
 
-  async create(data: Prisma.UserCreateInput) {
-    return this.prisma.db.user.create({
-      data,
-    });
-  }
-
-  async updateUser(userId: string, data: Prisma.UserUpdateInput) {
-      const userExists = await this.prisma.db.user.findUnique({
-        where: { id: userId },
-      });
-
-      if (!userExists) {
-        throw new NotFoundException(`Không tìm thấy tài khoản với ID: ${userId}`);
-      }
-
-      return this.prisma.db.user.update({
-        where: { id: userId },
-        data, 
-      });
-    }
-
-  async updateAvatar(userId: string, avatarUrl: string) {
-    const updatedUser = await this.prisma.db.user.update({
-      where: { id: userId },
-      data: { avatar: avatarUrl },
-      select: {
-        id: true,
-        email: true,
-        fullName: true,
-        avatar: true, 
-      },
-    });
-
-    if (!updatedUser) throw new NotFoundException('Không tìm thấy người dùng');
-    return updatedUser;
-  }
-    
-  async updateRefreshToken(userId: string, refreshToken: string | null) {
-    return this.prisma.db.user.update({
-      where: { id: userId },
-      data: { refreshToken },
-    });
-  }
-
-  async updateProfile(userId: string, dto: UpdateProfileDto) {
-    const userExists = await this.prisma.db.user.findUnique({ where: { id: userId } });
-    if (!userExists) throw new NotFoundException('Không tìm thấy tài khoản');
-
-    const dataToUpdate:  Prisma.UserUpdateInput = {}; 
-
-    if (dto.fullName) {
-      dataToUpdate.fullName = dto.fullName;
-    }
-
-    if (dto.password) {
-      const hashedPassword = await argon2.hash(dto.password);
-      dataToUpdate.password = hashedPassword;
-    }
-    this.eventEmitter.emit('profile.update', {
-      userId: userId,
-      content: `Đổi thông tin thành công.`
-    });
-    return this.prisma.db.user.update({
-      where: { id: userId },
-      data: dataToUpdate,
-    });
-  }
-  async updateRole(userId: string, role: Role) {
-    const userExists = await this.prisma.db.user.findUnique({ where: { id: userId } });
-    if (!userExists) throw new NotFoundException('Không tìm thấy tài khoản');
-    this.eventEmitter.emit('role.update', {
-      userId: userId,
-      content: `Bạn vừa được đổi quyền thành ${role}`
-    });
-    return this.prisma.db.user.update({
-      where: { id: userId },
-      data: { role },
-    });
-  }
   async findByValidVerifyToken(hashedToken: string) {
     return this.prisma.db.user.findFirst({
       where: {
@@ -118,5 +36,74 @@ export class UsersService {
         resetPasswordExpires: { gt: new Date() },
       },
     });
+  }
+
+  async create(data: Prisma.UserCreateInput) {
+    return this.prisma.db.user.create({ data });
+  }
+
+  async updateUser(userId: string, data: Prisma.UserUpdateInput) {
+    await this.ensureUserExists(userId);
+    return this.prisma.db.user.update({ where: { id: userId }, data });
+  }
+
+  async updateAvatar(userId: string, avatarUrl: string) {
+    await this.ensureUserExists(userId);
+    return this.prisma.db.user.update({
+      where: { id: userId },
+      data: { avatar: avatarUrl },
+      select: { id: true, email: true, fullName: true, avatar: true },
+    });
+  }
+
+  async updateRefreshToken(userId: string, refreshToken: string | null) {
+    return this.prisma.db.user.update({
+      where: { id: userId },
+      data: { refreshToken },
+    });
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    await this.ensureUserExists(userId);
+
+    const dataToUpdate: Prisma.UserUpdateInput = {
+      ...(dto.fullName && { fullName: dto.fullName }),
+      ...(dto.password && { password: await argon2.hash(dto.password) }),
+    };
+
+    const updatedUser = await this.prisma.db.user.update({
+      where: { id: userId },
+      data: dataToUpdate,
+    });
+
+    this.eventEmitter.emit('profile.update', {
+      userId,
+      content: `Đổi thông tin thành công.`,
+    });
+
+    return updatedUser;
+  }
+
+  async updateRole(userId: string, role: Role) {
+    await this.ensureUserExists(userId);
+
+    const updatedUser = await this.prisma.db.user.update({
+      where: { id: userId },
+      data: { role },
+    });
+
+    this.eventEmitter.emit('role.update', {
+      userId,
+      content: `Bạn vừa được đổi quyền thành ${role}`,
+    });
+
+    return updatedUser;
+  }
+
+  private async ensureUserExists(userId: string): Promise<void> {
+    const userExists = await this.findById(userId);
+    if (!userExists) {
+      throw new NotFoundException(`Không tìm thấy tài khoản với ID: ${userId}`);
+    }
   }
 }
