@@ -3,8 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { HandlebarsAdapter } from '@nestjs-modules/mailer/dist/adapters/handlebars.adapter';
 import * as path from 'path';
+import { SendMailOptions } from 'nodemailer';
 
-// Import các class bạn vừa tạo
 import { EmailStrategyFactory } from './email-strategy.factory';
 import { ForgotPasswordStrategy } from './strategy/forgot-password.strategy';
 import { MailProcessor } from './mails.processor';
@@ -18,17 +18,17 @@ import { MarketingStrategy } from './strategy/marketing.strategy';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         transport: {
-          host: configService.get<string>('MAIL_HOST'),
-          port: configService.get<number>('MAIL_PORT'), 
+          host: configService.get<string>('MAIL_HOST') || '',
+          port: configService.get<number>('MAIL_PORT') || 587, 
           secure: configService.get<boolean>('MAIL_SECURE', false),
           auth: {
-            user: configService.get<string>('MAIL_USER'),
-            pass: configService.get<string>('MAIL_PASS'),
+            user: configService.get<string>('MAIL_USER') || '',
+            pass: configService.get<string>('MAIL_PASS') || '',
           },
         },
         defaults: {
-          from: configService.get<string>('MAIL_FROM'),
-        },
+          from: configService.get<string>('MAIL_FROM') || 'noreply@domain.com',
+        } as SendMailOptions,
         template: {
           dir: path.join(process.cwd(), 'dist', 'processor', 'templates'),
           adapter: new HandlebarsAdapter(),

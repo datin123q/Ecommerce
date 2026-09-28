@@ -27,7 +27,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { MailerModule} from '@nestjs-modules/mailer';
 import { envValidationSchema } from './config/env.validation';
 import { ProcessorModule } from './processor/processor.module';
-
+import { SendMailOptions } from 'nodemailer';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -86,17 +86,17 @@ import { ProcessorModule } from './processor/processor.module';
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
         transport: {
-          host: configService.get<string>('MAIL_HOST'),
-          port: configService.get<number>('MAIL_PORT'),
-          secure: false, // true nếu dùng port 465, false nếu dùng 587
+          host: configService.get<string>('MAIL_HOST') || 'smtp.gmail.com',
+          port: configService.get<number>('MAIL_PORT') || 587,
+          secure: false, 
           auth: {
-            user: configService.get<string>('MAIL_USER'),
-            pass: configService.get<string>('MAIL_PASS'),
+            user: configService.get<string>('MAIL_USER') || '',
+            pass: configService.get<string>('MAIL_PASS') || '',
           },
         },
         defaults: {
-          from: configService.get<string>('MAIL_FROM'),
-        },
+          from: configService.get<string>('MAIL_FROM') || 'noreply@domain.com',
+        } as SendMailOptions,
       }),
     }),
     
@@ -115,7 +115,8 @@ import { ProcessorModule } from './processor/processor.module';
     AuditLogsModule,
     RedisModule,
     TasksModule,
-    ProcessorModule
+    ProcessorModule,
+    DatabaseModule,
   ],
   controllers: [],
   providers: [
