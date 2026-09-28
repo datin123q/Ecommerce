@@ -1,6 +1,8 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import Redis from "ioredis";
 
+const TIME_TO_LIVE = 600000
+
 @Injectable()
 export class RedisCacheService{
     private readonly logger = new Logger(RedisCacheService.name);
@@ -15,7 +17,7 @@ export class RedisCacheService{
         return data as any; 
         }
     }
-    async set(key: string, value: object, ttlMs: number = 600000): Promise<void> {
+    async set(key: string, value: object, ttlMs: number = TIME_TO_LIVE): Promise<void> {
         await this.redisClient.set(key, JSON.stringify(value), 'PX', ttlMs);
     }
     async del(...keys: string[]): Promise<void> {
