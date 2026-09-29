@@ -1,24 +1,37 @@
 name: Commerce Core CI/CD
 
-# Kích hoạt khi có code mới đẩy lên nhánh main
 on:
   push:
-    branches: [ "Main", "master" ]
+    branches: ["Main", "master"]
   pull_request:
-    branches: [ "Main", "master" ]
+    branches: ["Main", "master"]
 
 jobs:
-  # --- GIAI ĐOẠN 1: KIỂM TRA & BIÊN DỊCH ---
   build-and-test:
     runs-on: ubuntu-latest
-    
+
     env:
       DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
       JWT_ACCESS_SECRET: "dummy_access"
       JWT_REFRESH_SECRET: "dummy_refresh"
       STRIPE_SECRET_KEY: "dummy_stripe"
       STRIPE_WEBHOOK_SECRET: "dummy_webhook"
+
     services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dummy
+          POSTGRES_PASSWORD: dummy
+          POSTGRES_DB: dummy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dummy -d dummy"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
       redis:
         image: redis:alpine
         ports:
@@ -28,27 +41,28 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    steps:
-      - name:  Kéo source code về máy chủ GitHub
-        uses: actions/checkout@v3
 
-      - name:  Cài đặt Node.js 24
+    steps:
+      - name: Kéo source code
+        uses: actions/checkout@v4
+
+      - name: Cài đặt Node.js 24
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
-          cache: 'npm' # Giúp cài đặt nhanh hơn ở các lần sau
+          node-version: "24"
+          cache: npm
 
-      - name:  Cài đặt thư viện (Chuẩn môi trường sạch)
+      - name: Cài đặt dependencies
         run: npm ci
 
-      - name:  Sinh code cho Prisma Client
+      - name: Generate Prisma Client
         run: npx prisma generate
 
-      - name:  Biên dịch dự án (Build)
+      - name: Build
         run: npm run build
 
-      - name:  Chạy kiểm thử tự động (Unit & E2E)
-        run: |
-          npm run test
-          npm run test:e2e
+      - name: Unit Test
+        run: npm run test
 
+      - name: E2E Test
+        run: npm run test:e2e
