@@ -21,8 +21,8 @@ jobs:
 
       JWT_ACCESS_SECRET: "dummy_access_secret"
       JWT_REFRESH_SECRET: "dummy_refresh_secret"
-      JWT_ACCESS_EXPIRES_IN: "dummy_access_expires"
-      JWT_REFRESH_EXPIRES_IN: "15m"
+      JWT_ACCESS_EXPIRES_IN: "15m"
+      JWT_REFRESH_EXPIRES_IN: "7d"
 
       GOOGLE_CLIENT_ID: "dummy_google_id"
       GOOGLE_CLIENT_SECRET: "dummy_google_secret"
