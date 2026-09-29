@@ -13,13 +13,13 @@ jobs:
     env:
       DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
       REDIS_HOST: "dummy_redis_host"
-      REDIS_PORT: "dummy_redis_port"
+      REDIS_PORT: 3000
       STRIPE_SECRET_KEY: "dummy_stripe_key"
       STRIPE_WEBHOOK_SECRET: "dummy_stripe_secret"
       JWT_ACCESS_SECRET: "dummy_access_secret"
       JWT_REFRESH_SECRET: "dummy_refresh_secret"
       JWT_ACCESS_EXPIRES_IN: "dummy_access_expires"
-      JWT_REFRESH_EXPIRES_IN: "dummy_refresh_expires"
+      JWT_REFRESH_EXPIRES_IN: 15m
       GOOGLE_CLIENT_ID: "dummy_google_id"
       GOOGLE_CLIENT_SECRET: "dummy_google_secret"
       GOOGLE_CALLBACK_URL: "dummy_google_callback"
