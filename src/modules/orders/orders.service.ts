@@ -105,9 +105,9 @@ export class OrdersService {
     });
   }
 
-  getOneOrder(orderId: string) {
+  getOneOrder(orderId: string, userId: string) {
     return this.prisma.db.order.findUnique({
-      where: { id: orderId },
+      where: { id: orderId, userId: userId },
       include: { orderItems: true }
     });
   }

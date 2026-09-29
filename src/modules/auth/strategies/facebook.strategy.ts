@@ -22,7 +22,6 @@ export class FacebookStrategy extends PassportStrategy(Strategy, 'facebook') {
 
   async validate(accessToken: string, refreshToken: string, profile: Profile, done: SocialVerifyCallback) {
     const { name, emails, photos } = profile;
-    console.log(profile);
     if(name){
     const user = {
       email: emails && emails[0] ? emails[0].value : null,

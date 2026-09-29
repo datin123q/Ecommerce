@@ -21,7 +21,6 @@ export class TwitterStrategy extends PassportStrategy(Strategy, 'twitter') {
   }
 
   async validate(accessToken: string, refreshToken: string, profile: Profile, done: SocialVerifyCallback) {
-    console.log(profile);
     const user = {
       email: profile.emails && profile.emails[0] ? profile.emails[0].value : null,
       fullName: profile.displayName || profile.username,

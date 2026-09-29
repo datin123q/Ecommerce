@@ -15,7 +15,6 @@ export class MarketingStrategy extends BaseEmailStrategy<MarketingPayload> {
     constructor( mailerService: MailerService) {super(mailerService)}
 
     async send(payload: MarketingPayload): Promise<void> {
-        console.log(payload);
         await this.mailerService.sendMail({
             to: payload.email, 
             subject: '[E-Commerce] 🔥 Đừng bỏ lỡ bộ sưu tập mới tuần này!',

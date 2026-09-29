@@ -34,9 +34,10 @@ export class PaymentsController {
   @UseInterceptors(IdempotencyInterceptor)
   async createIntent(
     @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: CreatePaymentDto
+    @Body() dto: CreatePaymentDto,
+    @Headers('x-idempotency-key') idempotencyKey: string,
   ) {
-    return this.paymentsService.createPaymentIntent(user.id, dto);
+    return this.paymentsService.createPaymentIntent(user.id, dto, idempotencyKey);
   }
 
   @Post('webhook')

@@ -107,32 +107,48 @@ export class InventoryService {
   }
   
   async deductStockAndLog(
-    tx: Prisma.TransactionClient, 
-    items: DeductItem[], 
+    tx: Prisma.TransactionClient,
+    items: DeductItem[],
     userId: string
   ) {
     if (items.length === 0) return [];
 
-    const updatePromises = items.map(item =>
-      tx.inventory.update({
-        where: { id: item.inventoryId },
+    const updatedInventories: Inventory[] = [];
+    const transactionLogs: Prisma.InventoryTransactionCreateManyInput[] = [];
+
+    for (const item of [...items].sort((a, b) => a.inventoryId.localeCompare(b.inventoryId))) {
+      if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+        throw new BadRequestException('Số lượng cần trừ kho phải là số nguyên dương');
+      }
+      
+      const result = await tx.inventory.updateMany({
+        where: { id: item.inventoryId, quantity: { gte: item.quantity } },
         data: { quantity: { decrement: item.quantity } },
-      })
-    );
-    const updatedInventories = await Promise.all(updatePromises);
+      });
 
-    const transactionLogs = items.map(item => ({
-      type: TransactionType.OUT,
-      quantity: item.quantity,
-      inventoryId: item.inventoryId,
-      userId,
-    }));
-    
+      if (result.count !== 1) {
+        const inventory = await tx.inventory.findUnique({ where: { id: item.inventoryId } });
+        throw new BadRequestException(
+          `Số lượng tồn kho không đủ (Hiện có: ${inventory?.quantity ?? 0})`,
+        );
+      }
+
+      const updatedInventory = await tx.inventory.findUnique({ where: { id: item.inventoryId } });
+      if (!updatedInventory) {
+        throw new BadRequestException('Không tìm thấy bản ghi tồn kho');
+      }
+      updatedInventories.push(updatedInventory);
+      transactionLogs.push({
+        type: TransactionType.OUT,
+        quantity: item.quantity,
+        inventoryId: item.inventoryId,
+        userId,
+      });
+    }
+
     await tx.inventoryTransaction.createMany({ data: transactionLogs });
-
     return updatedInventories;
   }
-
   async restoreStockAndLog(
     tx: Prisma.TransactionClient, 
     items: RestoreItem[], 

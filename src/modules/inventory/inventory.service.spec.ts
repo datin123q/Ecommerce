@@ -26,6 +26,7 @@ describe('InventoryService', () => {
         findUnique: jest.fn(),
         upsert: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
       },
       inventoryTransaction: {
         create: jest.fn(),
@@ -193,6 +194,15 @@ describe('InventoryService', () => {
       await expect(service.stockOut(adminId, dto as any)).rejects.toThrow(BadRequestException);
     });
 
+    it('Nên từ chối nếu tồn kho bị giảm sau lần đọc ban đầu', async () => {
+      mockPrismaService.db.inventory.findUnique
+        .mockResolvedValueOnce({ id: 'inv-1', quantity: 10 })
+        .mockResolvedValueOnce({ id: 'inv-1', quantity: 2 });
+      mockPrismaService.db.inventory.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(service.stockOut(adminId, dto as any)).rejects.toThrow(BadRequestException);
+      expect(prisma.db.inventoryTransaction.createMany).not.toHaveBeenCalled();
+    });
     it('Nên ném BadRequestException nếu sản phẩm chưa từng có trong kho', async () => {
       mockPrismaService.db.inventory.findUnique.mockResolvedValue(null);
 
@@ -201,14 +211,17 @@ describe('InventoryService', () => {
 
     it('Nên thực thi trừ tồn kho, lưu log transaction và bắn sự kiện', async () => {
       const existingInventory = { id: 'inv-1', quantity: 10 };
-      mockPrismaService.db.inventory.findUnique.mockResolvedValue(existingInventory);
-      mockPrismaService.db.inventory.update.mockResolvedValue({ id: 'inv-1', quantity: 5 });
+      const updatedInventory = { id: 'inv-1', quantity: 5 };
+      mockPrismaService.db.inventory.findUnique
+        .mockResolvedValueOnce(existingInventory)
+        .mockResolvedValueOnce(updatedInventory);
+      mockPrismaService.db.inventory.updateMany.mockResolvedValue({ count: 1 });
 
       await service.stockOut(adminId, dto as any);
 
-      // Hàm deductStockAndLog phải gọi update inventory
-      expect(prisma.db.inventory.update).toHaveBeenCalledWith({
-        where: { id: existingInventory.id },
+      // Điều kiện tồn kho và phép trừ phải nằm trong cùng một câu lệnh cập nhật.
+      expect(prisma.db.inventory.updateMany).toHaveBeenCalledWith({
+        where: { id: existingInventory.id, quantity: { gte: dto.quantity } },
         data: { quantity: { decrement: dto.quantity } },
       });
 

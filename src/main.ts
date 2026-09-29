@@ -16,6 +16,7 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 import { TransformInterceptor } from './common/interceptors/tranform.interceptor';
 import { useContainer } from 'class-validator';
 import cookieParser from 'cookie-parser';
+import { Response } from 'express';
 
 async function bootstrap() {
 
@@ -51,7 +52,7 @@ async function bootstrap() {
 
   app.use(helmet());
   app.enableCors({
-    origin: [process.env.FRONTEND_URL || 'redis://localhost:5173'], 
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173', 
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true, 
   });
@@ -64,17 +65,23 @@ async function bootstrap() {
     prefix: 'commerce-session:', 
   });
 
+  const sessionSecret = process.env.SESSION_SECRET;
+
+  if (process.env.NODE_ENV === 'production' && !sessionSecret) {
+    throw new Error('SESSION_SECRET must be configured in production');
+  }
+
   app.use(
     session({
       store: redisStore,
-      secret: process.env.SESSION_SECRET || 'twitter-session-secret', 
+      secret: sessionSecret || 'development-only-secret',
       resave: false,
       saveUninitialized: false,
-      cookie: { 
-        maxAge: 5 * 60 * 1000, 
+      cookie: {
+        maxAge: 5 * 60 * 1000,
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production', 
-      }, 
+        secure: process.env.NODE_ENV === 'production',
+      },
     }),
   );
 
@@ -110,8 +117,14 @@ async function bootstrap() {
   });
 
   const port = process.env.PORT || 3000;
+  app.getHttpAdapter().get('/server-info', (_req, res: Response) => {
+    res.json({
+      port,
+      pid: process.pid,
+    });
+  });
   await app.listen(port, '0.0.0.0');
-  
+
   logger.log(`Server is running internally on port: ${port}`);
   logger.log(`Swagger UI is available at: http://localhost/api`);
 }

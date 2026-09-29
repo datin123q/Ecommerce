@@ -39,8 +39,8 @@ export class OrdersController {
 
   @Get('my-orders/:id')
   @ApiOperation({ summary: 'Lấy chi tiết một đơn hàng' })
-  getOneOrder(@Param('id') id: string) {
-    return this.ordersService.getOneOrder(id);
+  getOneOrder(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.ordersService.getOneOrder(id, user.id);
   }
 
   @Patch(':id/cancel')

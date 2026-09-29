@@ -15,18 +15,40 @@ export class StripeAdapter implements IPaymentProvider {
     this.webhookSecret = this.configService.getOrThrow<string>('STRIPE_WEBHOOK_SECRET');
   }
 
-  async createPaymentIntent(amount: number, orderId: string, metadata: any) {
-    const paymentIntent = await this.stripe.paymentIntents.create({
-      amount,
-      currency: 'vnd',
-      automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
-      metadata: { orderId, ...metadata },
-    });
+  async createPaymentIntent(
+    amount: number,
+    orderId: string,
+    metadata: { paymentId: string },
+    idempotencyKey: string,
+  ) {
+    const paymentIntent = await this.stripe.paymentIntents.create(
+      {
+        amount,
+        currency: 'vnd',
+        automatic_payment_methods: {
+          enabled: true,
+          allow_redirects: 'never',
+        },
+        metadata: {
+          orderId,
+          ...metadata,
+        },
+      },
+      {
+        idempotencyKey,
+      },
+    );
+
     if (!paymentIntent.client_secret) {
-      throw new InternalServerErrorException('Lỗi hệ thống: Stripe không trả về client_secret');
+      throw new InternalServerErrorException(
+        'Lỗi hệ thống: Stripe không trả về client_secret',
+      );
     }
 
-    return { clientSecret: paymentIntent.client_secret };
+    return {
+      clientSecret: paymentIntent.client_secret,
+      id: paymentIntent.id,
+    };
   }
 
   verifyWebhookEvent(payload: Buffer, signature: string): Stripe.Event {
