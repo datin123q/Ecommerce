@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Req, Headers, UseGuards, BadRequestException ,UseInterceptors, HttpCode} from '@nestjs/common';
+import { Controller, Post, Body, Req, Headers, UseGuards, BadRequestException ,UseInterceptors, HttpCode, HttpStatus} from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -40,7 +40,7 @@ export class PaymentsController {
   }
 
   @Post('webhook')
-  @HttpCode(200)
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Stripe Webhook (Hệ thống tự động gọi)' })
   async handleWebhook(
     @Headers('stripe-signature') signature: string,

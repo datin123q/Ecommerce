@@ -61,7 +61,6 @@ export class PaymentsService {
     return { received: true };
   }
 
-  // PRIVATE HANDLERS: XỬ LÝ THEO PHƯƠNG THỨC THANH TOÁN
   private async processCODPayment(userId: string, order: any, method: PaymentMethod) {
     StateTransition.validateTransition(order.status, OrderStatus.AWAITING_DELIVERY);
 
@@ -106,7 +105,6 @@ export class PaymentsService {
     }
   }
 
-  // PRIVATE HANDLERS: XỬ LÝ WEBHOOK EVENTS
   private async handlePaymentSucceeded(paymentId: string, paymentIntent: StripeEventData) {
     try {
       const payment = await this.prisma.db.payment.findUnique({
