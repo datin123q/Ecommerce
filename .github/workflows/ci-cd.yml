@@ -32,6 +32,20 @@ jobs:
       CLOUDINARY_API_KEY: "dummy_cloudinary_key"
       CLOUDINARY_API_SECRET: "dummy_cloudinary_secret"
 
+      FACEBOOK_APP_ID: "dummy_facebook_id"
+      FACEBOOK_APP_SECRET: "dummy_facebook_secret"
+      FACEBOOK_CALLBACK_URL: "http://dummy/facebook/callback"
+
+      TWITTER_CONSUMER_KEY: "dummy_twitter_key"
+      TWITTER_CONSUMER_SECRET:  "dummy_twitter_secret"
+      TWITTER_CALLBACK_URL:  "http://dummy/twitter/callback"
+      
+      MAIL_HOST: "smtp.gmail.com"
+      MAIL_PORT: 587
+      MAIL_USER:  "indat0011@gmail.com"
+      MAIL_PASS:  "dummy_pass"
+      MAIL_FROM: "'E-Commerce System' <noreply@ecommerce.com>"
+
     services:
       postgres:
         image: postgres:16
