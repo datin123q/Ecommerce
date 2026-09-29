@@ -12,9 +12,6 @@ jobs:
 
     env:
       DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
-      JWT_ACCESS_SECRET: "dummy_access"
-      JWT_REFRESH_SECRET: "dummy_refresh"
-      STRIPE_WEBHOOK_SECRET: "dummy_webhook"
       REDIS_HOST: "dummy_redis_host"
       REDIS_PORT: "dummy_redis_port"
       STRIPE_SECRET_KEY: "dummy_stripe_key"
