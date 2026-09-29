@@ -22,7 +22,7 @@ jobs:
       JWT_REFRESH_EXPIRES_IN: 15m
       GOOGLE_CLIENT_ID: "dummy_google_id"
       GOOGLE_CLIENT_SECRET: "dummy_google_secret"
-      GOOGLE_CALLBACK_URL: "dummy_google_callback"
+      GOOGLE_CALLBACK_URL: "http://dummy/google/callback"
       CLOUDINARY_CLOUD_NAME: "dummy_cloudinary_name"
       CLOUDINARY_API_KEY: "dummy_cloudinary_key"
       CLOUDINARY_API_SECRET: "dummy_cloudinary_secret"
