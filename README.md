@@ -1,6 +1,6 @@
 # 🛒 Commerce Core API
 
-Một hệ thống Backend API mạnh mẽ dành cho nền tảng thương mại điện tử, được xây dựng dựa trên kiến trúc Micro-services linh hoạt.
+Một hệ thống Backend API mạnh mẽ dành cho nền tảng thương mại điện tử, được xây dựng dựa trên kiến trúc monolith.
 
 ## 🚀 Công nghệ sử dụng
 * **Framework:** NestJS (Node.js)
@@ -35,6 +35,11 @@ Một hệ thống Backend API mạnh mẽ dành cho nền tảng thương mại
 5. **Test Payment**
    ```bash
    stripe listen --forward-to localhost:3000/api/v1/payments/webhook
+   ```
+   **Seed Data**
+   ```bash
+   $env:LOAD_TEST_SEED_CONFIRM = "YES"
+   npx dotenv -e .env -- npm run seed:load
    ```
 ---
 

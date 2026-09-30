@@ -1,7 +1,11 @@
-import { Injectable, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Stripe from 'stripe';
-import { IPaymentProvider } from './payment-provider.interface';
+import type { IPaymentProvider } from './payment-provider.interface';
 
 @Injectable()
 export class StripeAdapter implements IPaymentProvider {
@@ -9,10 +13,12 @@ export class StripeAdapter implements IPaymentProvider {
   private webhookSecret: string;
 
   constructor(private configService: ConfigService) {
-    this.stripe = new Stripe(this.configService.getOrThrow<string>('STRIPE_SECRET_KEY'), {
-      apiVersion: '2026-07-29.dahlia' as any,
-    });
-    this.webhookSecret = this.configService.getOrThrow<string>('STRIPE_WEBHOOK_SECRET');
+    this.stripe = new Stripe(
+      this.configService.getOrThrow<string>('STRIPE_SECRET_KEY'),
+    );
+    this.webhookSecret = this.configService.getOrThrow<string>(
+      'STRIPE_WEBHOOK_SECRET',
+    );
   }
 
   async createPaymentIntent(
@@ -53,7 +59,11 @@ export class StripeAdapter implements IPaymentProvider {
 
   verifyWebhookEvent(payload: Buffer, signature: string): Stripe.Event {
     try {
-      return this.stripe.webhooks.constructEvent(payload, signature, this.webhookSecret);
+      return this.stripe.webhooks.constructEvent(
+        payload,
+        signature,
+        this.webhookSecret,
+      );
     } catch (err) {
       throw new BadRequestException(`Webhook Error: ${err.message}`);
     }

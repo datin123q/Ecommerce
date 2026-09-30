@@ -9,15 +9,23 @@ export class NotificationsListener {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @OnEvent('order.created')
+  @OnEvent('order.cancelled')
+  @OnEvent('order.statusUpdated')
   @OnEvent('cartItem.created')
   @OnEvent('cartItem.delete')
   @OnEvent('paymentCod.created')
   @OnEvent('paymentStripe.created')
   @OnEvent('profile.update')
   @OnEvent('role.update')
-  async handleAllNotificationEvents(payload: { userId: string; content: string }) {
+  async handleAllNotificationEvents(payload: {
+    userId: string;
+    content: string;
+  }) {
     try {
-      await this.notificationsService.pushNotificationToQueue(payload.userId, payload.content);
+      await this.notificationsService.pushNotificationToQueue(
+        payload.userId,
+        payload.content,
+      );
     } catch (error) {
       this.logger.error(`Lỗi khi đẩy thông báo vào hàng đợi: ${error.message}`);
     }

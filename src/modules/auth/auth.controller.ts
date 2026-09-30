@@ -95,16 +95,25 @@ export class AuthController {
 
   @Post('refresh')
   @ApiOperation({ summary: 'Cấp lại Access Token mới' })
-  async refresh(@Req() req: Request) {
-    const refreshToken = req.cookies?.refresh_token;
+  async refresh(@Res({ passthrough: true }) res: Response, @Req() req: Request) {
+    const refresh_Token = req.cookies?.refresh_token;
 
-    if (!refreshToken) {
+    if (!refresh_Token) {
       throw new UnauthorizedException(
         'Không tìm thấy refresh token',
       );
     }
 
-    return this.authService.refreshToken(refreshToken);
+    const result = await this.authService.refreshToken(refresh_Token);
+    res.cookie('refresh_token', result.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/v1/auth/refresh',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+    const {refreshToken, ...refreshResult}= result  ;
+    return refreshResult ;
   }
 
   @Post('logout')

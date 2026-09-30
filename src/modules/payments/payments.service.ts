@@ -10,12 +10,15 @@ import { PrismaService } from '../../database/prisma.service';
 
 import { CreatePaymentDto } from './dto/create-payment.dto';
 
+import type Stripe from 'stripe';
 import {
   PaymentStatus,
   PaymentMethod,
   OrderStatus,
-  Prisma,
+  Order,
+  Payment,
 } from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
@@ -26,20 +29,11 @@ import {
   type IPaymentProvider,
 } from './adapters/payment-provider.interface';
 
-interface StripeEventData {
-  id: string;
-  amount: number;
-  currency: string;
-
-  metadata?: {
-    paymentId?: string;
-  };
-}
+type StripeEventData = Stripe.PaymentIntent;
 
 @Injectable()
 export class PaymentsService {
-  private readonly logger =
-    new Logger(PaymentsService.name);
+  private readonly logger = new Logger(PaymentsService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -56,90 +50,49 @@ export class PaymentsService {
     idempotencyKey: string,
   ) {
     if (!idempotencyKey?.trim()) {
-      throw new BadRequestException(
-        'Thiếu x-idempotency-key',
-      );
+      throw new BadRequestException('Thiếu x-idempotency-key');
     }
-
-    const order =
-      await this.prisma.db.order.findUnique({
-        where: {
-          id: dto.orderId,
-          userId,
-        },
-      });
+    const order = await this.prisma.db.order.findUnique({
+      where: {
+        id: dto.orderId,
+        userId,
+      },
+    });
 
     if (!order) {
-      throw new NotFoundException(
-        'Không tìm thấy đơn hàng',
-      );
+      throw new NotFoundException('Không tìm thấy đơn hàng');
     }
 
     switch (dto.method) {
       case PaymentMethod.COD:
-        return this.processCODPayment(
-          userId,
-          order,
-          dto.method,
-        );
+        return this.processCODPayment(userId, order, dto.method);
 
       case PaymentMethod.STRIPE:
-        return this.processStripePayment(
-          order,
-          dto.method,
-          idempotencyKey,
-        );
+        return this.processStripePayment(order, dto.method, idempotencyKey);
 
       default:
-        throw new BadRequestException(
-          'Phương thức thanh toán không hỗ trợ',
-        );
+        throw new BadRequestException('Phương thức thanh toán không hỗ trợ');
     }
   }
 
-  async handleStripeWebhook(
-    signature: string,
-    payload: Buffer,
-  ) {
-    const event =
-      this.verifyWebhookSignature(
-        signature,
-        payload,
-      );
+  async handleStripeWebhook(signature: string, payload: Buffer) {
+    const event = this.verifyWebhookSignature(signature, payload);
 
-    const data =
-      event.data?.object as StripeEventData;
+    const data = event.data?.object as StripeEventData;
 
-    const paymentId =
-      data?.metadata?.paymentId;
+    const paymentId = data?.metadata?.paymentId;
 
     if (!paymentId) {
       this.logger.warn(
         'Bỏ qua Webhook: Không tìm thấy paymentId trong metadata',
       );
-
-      return {
-        received: true,
-      };
+      return { received: true };
     }
 
-    if (
-      event.type ===
-      'payment_intent.succeeded'
-    ) {
-      await this.handlePaymentSucceeded(
-        paymentId,
-        data,
-      );
-    }
-
-    else if (
-      event.type ===
-      'payment_intent.payment_failed'
-    ) {
-      await this.handlePaymentFailed(
-        paymentId,
-      );
+    if (event.type === 'payment_intent.succeeded') {
+      await this.handlePaymentSucceeded(paymentId, data);
+    } else if (event.type === 'payment_intent.payment_failed') {
+      await this.handlePaymentFailed(paymentId);
     }
 
     return {
@@ -149,7 +102,7 @@ export class PaymentsService {
 
   private async processCODPayment(
     userId: string,
-    order: any,
+    order: Order,
     method: PaymentMethod,
   ) {
     StateTransition.validateTransition(
@@ -157,31 +110,26 @@ export class PaymentsService {
       OrderStatus.AWAITING_DELIVERY,
     );
 
-    const payment =
-      await this.prisma.db.$transaction(
-        async (tx) => {
-          const newPayment =
-            await this.upsertPaymentRecord(
-              order.id,
-              order.totalAmount,
-              method,
-              tx,
-            );
-
-          await tx.order.update({
-            where: {
-              id: order.id,
-            },
-
-            data: {
-              status:
-                OrderStatus.AWAITING_DELIVERY,
-            },
-          });
-
-          return newPayment;
-        },
+    const payment = await this.prisma.db.$transaction(async (tx) => {
+      const newPayment = await this.upsertPaymentRecord(
+        order.id,
+        order.totalAmount,
+        method,
+        tx,
       );
+
+      await tx.order.update({
+        where: {
+          id: order.id,
+        },
+
+        data: {
+          status: OrderStatus.AWAITING_DELIVERY,
+        },
+      });
+
+      return newPayment;
+    });
 
     this.emitPaymentEvent(
       'paymentCod.created',
@@ -190,55 +138,43 @@ export class PaymentsService {
     );
 
     return {
-      message:
-        'Đã ghi nhận phương thức COD',
-
+      message: 'Đã ghi nhận phương thức COD',
       paymentId: payment.id,
     };
   }
 
   private async processStripePayment(
-    order: any,
+    order: Order,
     method: PaymentMethod,
     idempotencyKey: string,
   ) {
-    const payment =
-      await this.upsertPaymentRecord(
-        order.id,
-        order.totalAmount,
-        method,
-      );
+    const payment = await this.upsertPaymentRecord(
+      order.id,
+      order.totalAmount,
+      method,
+    );
 
-    const amountNum =
-      Number(order.totalAmount);
+    const amountNum = Number(order.totalAmount);
 
     try {
-      const result =
-        await this.paymentProvider.createPaymentIntent(
-          amountNum,
-
-          order.id,
-
-          {
-            paymentId: payment.id,
-          },
-
-          idempotencyKey,
-        );
+      const result = await this.paymentProvider.createPaymentIntent(
+        amountNum,
+        order.id,
+        {
+          paymentId: payment.id,
+        },
+        idempotencyKey,
+      );
 
       return {
-        message:
-          'Tạo phiên thanh toán Stripe thành công',
+        message: 'Tạo phiên thanh toán Stripe thành công',
 
-        clientSecret:
-          result.clientSecret,
+        clientSecret: result.clientSecret,
       };
     } catch (error) {
       this.logger.error(
         `Lỗi khi gọi Stripe API: ${
-          error instanceof Error
-            ? error.message
-            : String(error)
+          error instanceof Error ? error.message : String(error)
         }`,
       );
 
@@ -253,52 +189,39 @@ export class PaymentsService {
     paymentIntent: StripeEventData,
   ) {
     try {
-      const payment =
-        await this.prisma.db.payment.findUnique({
-          where: {
-            id: paymentId,
-          },
+      const payment = await this.prisma.db.payment.findUnique({
+        where: {
+          id: paymentId,
+        },
 
-          include: {
-            order: true,
-          },
-        });
+        include: {
+          order: true,
+        },
+      });
 
       if (!payment) {
-        this.logger.error(
-          `Không tìm thấy payment: ${paymentId}`,
-        );
+        this.logger.error(`Không tìm thấy payment: ${paymentId}`);
 
         return;
       }
 
-      if (
-        payment.status ===
-        PaymentStatus.SUCCESS
-      ) {
-        this.logger.log(
-          `Payment ${paymentId} đã SUCCESS. Bỏ qua webhook.`,
-        );
-
+      if (payment.status === PaymentStatus.SUCCESS) {
+        this.logger.log(`Payment ${paymentId} đã SUCCESS. Bỏ qua webhook.`);
         return;
       }
 
-      this.validatePaymentIntegrity(
-        payment,
-        paymentIntent,
-      );
+      this.validatePaymentIntegrity(payment, paymentIntent);
 
       StateTransition.validateTransition(
         payment.order.status,
         OrderStatus.PAID,
       );
 
-      const isUpdated =
-        await this.executeSuccessPaymentTransaction(
-          paymentId,
-          payment.orderId,
-          paymentIntent.id,
-        );
+      const isUpdated = await this.executeSuccessPaymentTransaction(
+        paymentId,
+        payment.orderId,
+        paymentIntent.id,
+      );
 
       if (!isUpdated) {
         return;
@@ -312,36 +235,27 @@ export class PaymentsService {
     } catch (error) {
       this.logger.error(
         `Lỗi DB khi xử lý webhook thành công: ${
-          error instanceof Error
-            ? error.message
-            : String(error)
+          error instanceof Error ? error.message : String(error)
         }`,
       );
 
-      throw new Error(
-        'Database Error, request Stripe to retry',
-      );
+      throw new Error('Database Error, request Stripe to retry');
     }
   }
 
-  private async handlePaymentFailed(
-    paymentId: string,
-  ) {
-    this.logger.warn(
-      `Thanh toán thất bại cho Payment ID: ${paymentId}`,
-    );
+  private async handlePaymentFailed(paymentId: string) {
+    this.logger.warn(`Thanh toán thất bại cho Payment ID: ${paymentId}`);
 
-    const result =
-      await this.prisma.db.payment.updateMany({
-        where: {
-          id: paymentId,
+    const result = await this.prisma.db.payment.updateMany({
+      where: {
+        id: paymentId,
 
-          status: PaymentStatus.PENDING,
-        },
-        data: {
-          status: PaymentStatus.FAILED,
-        },
-      });
+        status: PaymentStatus.PENDING,
+      },
+      data: {
+        status: PaymentStatus.FAILED,
+      },
+    });
 
     if (result.count === 0) {
       this.logger.log(
@@ -350,50 +264,39 @@ export class PaymentsService {
     }
   }
 
-  private verifyWebhookSignature(
-    signature: string,
-    payload: Buffer,
-  ) {
+  private verifyWebhookSignature(signature: string, payload: Buffer) {
     try {
-      return this.paymentProvider.verifyWebhookEvent(
-        payload,
-        signature,
-      );
+      return this.paymentProvider.verifyWebhookEvent(payload, signature);
     } catch (error) {
       this.logger.error(
         `Webhook signature verification failed: ${
-          error instanceof Error
-            ? error.message
-            : String(error)
+          error instanceof Error ? error.message : String(error)
         }`,
       );
-      throw new BadRequestException(
-        'Webhook Error',
-      );
+      throw new BadRequestException('Webhook Error');
     }
   }
 
   private validatePaymentIntegrity(
-    dbPayment: any,
+    dbPayment: Payment & { order: Order },
     stripeIntent: StripeEventData,
   ) {
     const paymentAmount = Number(dbPayment.amount.toString());
     const stripeAmount = stripeIntent.amount;
     const currency = stripeIntent.currency.toLowerCase();
 
-    if (
-      paymentAmount !== stripeAmount ||
-      currency !== 'vnd'
-    ) {
-      this.logger.error(`Lỗi logic tiền tệ: DB ${paymentAmount}, Stripe ${stripeAmount}, currency ${currency}`,);
+    if (paymentAmount !== stripeAmount || currency !== 'vnd') {
+      this.logger.error(
+        `Lỗi logic tiền tệ: DB ${paymentAmount}, Stripe ${stripeAmount}, currency ${currency}`,
+      );
 
-      throw new Error('Data integrity mismatch',);
+      throw new Error('Data integrity mismatch');
     }
   }
 
-  private async upsertPaymentRecord(
+  private upsertPaymentRecord(
     orderId: string,
-    amount: Prisma.Decimal,
+    amount: number,
     method: PaymentMethod,
     tx?: Prisma.TransactionClient,
   ) {
@@ -416,57 +319,45 @@ export class PaymentsService {
     });
   }
 
-  private async executeSuccessPaymentTransaction(
+  private executeSuccessPaymentTransaction(
     paymentId: string,
     orderId: string,
     transactionId: string,
   ) {
-    return this.prisma.db.$transaction(
-      async (tx) => {
-        const updatePaymentResult =
-          await tx.payment.updateMany({
-            where: {
-              id: paymentId,
-              status: PaymentStatus.PENDING,
-            },
-            data: {
-              status: PaymentStatus.SUCCESS,
-              transactionId,
-            },
-          });
+    return this.prisma.db.$transaction(async (tx) => {
+      const updatePaymentResult = await tx.payment.updateMany({
+        where: {
+          id: paymentId,
+          status: PaymentStatus.PENDING,
+        },
+        data: {
+          status: PaymentStatus.SUCCESS,
+          transactionId,
+        },
+      });
 
-        if (
-          updatePaymentResult.count === 0
-        ) {
-          return false;
-        }
+      if (updatePaymentResult.count === 0) {
+        return false;
+      }
 
-        await tx.order.update({
-          where: {
-            id: orderId,
-          },
+      await tx.order.update({
+        where: {
+          id: orderId,
+        },
 
-          data: {
-            status: OrderStatus.PAID,
-          },
-        });
+        data: {
+          status: OrderStatus.PAID,
+        },
+      });
 
-        return true;
-      },
-    );
+      return true;
+    });
   }
 
-  private emitPaymentEvent(
-    eventName: string,
-    userId: string,
-    content: string,
-  ) {
-    this.eventEmitter.emit(
-      eventName,
-      {
-        userId,
-        content,
-      },
-    );
+  private emitPaymentEvent(eventName: string, userId: string, content: string) {
+    this.eventEmitter.emit(eventName, {
+      userId,
+      content,
+    });
   }
 }
