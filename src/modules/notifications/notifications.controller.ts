@@ -1,11 +1,12 @@
-import { Controller, Get, Patch, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Param, UseGuards, Res, Query } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Role } from '@prisma/client';
-
+import { GetInventoriesDto } from '../inventory/dto/get-inventories.dto';
+import { Response } from 'express';
 interface AuthenticatedUser {
   id: string;
   email: string;
@@ -20,8 +21,10 @@ export class NotificationsController {
 
   @Get()
   @ApiOperation({ summary: 'Lấy danh sách thông báo của tôi' })
-  getMyNotifications(@CurrentUser() user: AuthenticatedUser) {
-    return this.notificationsService.getUserNotifications(user.id);
+  async getMyNotifications(@CurrentUser() user: AuthenticatedUser, @Query() query: GetInventoriesDto, @Res() res: Response) {
+    const dataString = await this.notificationsService.getUserNotifications(user.id, query);
+    res.setHeader('Content-Type', 'application/json');
+    return res.send(dataString);
   }
 
   @Get('unread-count')

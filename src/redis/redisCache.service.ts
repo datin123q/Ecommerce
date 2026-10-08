@@ -17,8 +17,14 @@ export class RedisCacheService{
         return data as any; 
         }
     }
+    async getRaw(key: string): Promise<string | null> {
+        return await this.redisClient.get(key);
+    }
     async set(key: string, value: object, ttlMs: number = TIME_TO_LIVE): Promise<void> {
         await this.redisClient.set(key, JSON.stringify(value), 'PX', ttlMs);
+    }
+    async setNumber(key: string, value: number, ttlMs: number = TIME_TO_LIVE): Promise<void> {
+        await this.redisClient.set(key, value, 'PX', ttlMs);
     }
     async del(...keys: string[]): Promise<void> {
         if (keys.length > 0) {

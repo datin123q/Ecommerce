@@ -12,6 +12,10 @@ export interface Response<T> {
 @Injectable()
 export class TransformInterceptor<T> implements NestInterceptor<T, Response<T>> {
   intercept(context: ExecutionContext, next: CallHandler): Observable<Response<T>> {
+    const request = context.switchToHttp().getRequest<{ path: string }>();
+    if (request.path.endsWith('/metrics')) {
+      return next.handle();
+    }
     return next.handle().pipe(
       map(data => ({
         success: true,

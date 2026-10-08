@@ -3,6 +3,7 @@ services:
     image: postgres:16-alpine
     container_name: commerce_core_postgres
     restart: always
+    command: postgres -c max_connections=300
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: rootpassword
@@ -21,6 +22,7 @@ services:
     volumes:
       - redis_data:/data
 
+  # Thêm lại Nginx vào đây
   nginx:
     image: nginx:alpine
     ports:
@@ -28,37 +30,36 @@ services:
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf
     depends_on:
-      - api_1
-      - api_2
-
-  api_1:
-    build: .
-    restart: always
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://root:rootpassword@postgres:5432/commerce_core_db?schema=public
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_URL: redis://redis:6379
+      - postgres
+      - redis
+  prometheus:
+    image: prom/prometheus
+    container_name: commerce_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     depends_on:
       - postgres
       - redis
 
-  api_2:
-    build: .
-    restart: always
-    env_file:
-      - .env
+  grafana:
+    image: grafana/grafana
+    container_name: commerce_grafana
+    restart: unless-stopped
+    ports:
+      - "3100:3000"
     environment:
-      DATABASE_URL: postgresql://root:rootpassword@postgres:5432/commerce_core_db?schema=public
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_URL: redis://redis:6379
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
     depends_on:
-      - postgres
-      - redis
-
+      - prometheus
 volumes:
   postgres_data:
   redis_data:
+  prometheus_data:
+  grafana_data:

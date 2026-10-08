@@ -57,7 +57,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  // @Throttle({ default: { limit: 5, ttl: 60000 } })
   @ApiOperation({ summary: 'Đăng nhập hệ thống' })
   async login(
     @Body() loginDto: LoginDto,

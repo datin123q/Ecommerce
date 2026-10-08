@@ -28,11 +28,13 @@ import { MailerModule} from '@nestjs-modules/mailer';
 import { envValidationSchema } from './config/env.validation';
 import { ProcessorModule } from './processor/processor.module';
 import { SendMailOptions } from 'nodemailer';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      validationSchema: envValidationSchema, 
+      validationSchema: envValidationSchema,
     }),
     CacheModule.registerAsync({
       isGlobal: true, 
@@ -64,16 +66,16 @@ import { SendMailOptions } from 'nodemailer';
 
       useFactory: (configService: ConfigService) => ({
         throttlers: [
-          {
-            name: 'short',
-            ttl: 1000,
-            limit: 3,
-          },
-          {
-            name: 'long',
-            ttl: 60000,
-            limit: 100,
-          },
+          // {
+          //   name: 'short',
+          //   ttl: 1000,
+          //   limit: 3,
+          // },
+          // {
+          //   name: 'long',
+          //   ttl: 60000,
+          //   limit: 100,
+          // },
         ],
 
         storage: new ThrottlerStorageRedisService(
@@ -94,12 +96,13 @@ import { SendMailOptions } from 'nodemailer';
             pass: configService.get<string>('MAIL_PASS') || '',
           },
         },
+        pool: true, maxConnections: 1, maxMessages: 100,
         defaults: {
           from: configService.get<string>('MAIL_FROM') || 'noreply@domain.com',
         } as SendMailOptions,
       }),
     }),
-    
+    PrometheusModule.register(),
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot(),
     AuthModule,

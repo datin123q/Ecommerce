@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards, Get, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Patch, Param, Delete, Query, Res } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
@@ -11,6 +11,9 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { query } from 'winston';
+import { GetInventoriesDto } from './dto/get-inventories.dto';
+import { Response } from 'express';
 
 interface AuthenticatedUser {
   id: string;
@@ -74,7 +77,9 @@ export class InventoryController {
 
   @Get('stocks')
   @ApiOperation({ summary: 'Xem danh sách tồn kho tổng hợp' })
-  getInventories() {
-    return this.inventoryService.getInventory();
+  async getInventories(@Query() query: GetInventoriesDto, @Res() res: Response) {
+    const dataString = await this.inventoryService.getInventory(query);
+    res.setHeader('Content-Type', 'application/json');
+    return res.send(dataString);
   }
 }

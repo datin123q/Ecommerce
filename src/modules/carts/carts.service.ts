@@ -15,6 +15,33 @@ export type CartWithItems = Prisma.CartGetPayload<{
   include: typeof cartWithItemsInclude;
 }>;
 
+export const checkoutCartSelect = {
+  // Select trực tiếp các trường của Cart
+  id: true,
+  userId: true,
+  
+  // Dùng thuần SELECT thay vì INCLUDE cho bảng liên kết
+  cartItems: {
+    select: {
+      variantId: true,
+      quantity: true,
+      variant: {
+        select: {
+          sku: true,
+          name: true,
+          product: {
+            select: { name: true , price: true}
+          }
+        }
+      }
+    }
+  }
+} satisfies Prisma.CartSelect; 
+
+export type CheckoutCartPayload = Prisma.CartGetPayload<{
+  select: typeof checkoutCartSelect
+}>;
+
 @Injectable()
 export class CartsService {
   constructor(
@@ -58,12 +85,29 @@ export class CartsService {
   async addToCart(userId: string, { variantId, quantity }: AddToCartDto) {
     const variant = await this.prisma.db.productVariant.findUnique({
       where: { id: variantId },
-      include: { product: true },
+      select: {
+        id: true,
+        name: true, 
+        product: {
+          select: { 
+            name: true 
+          }
+        }
+      }
     });
     
     if (!variant) throw new NotFoundException('Sản phẩm không tồn tại');
 
-    const cart = await this.getMyCart(userId);
+    let cart = await this.prisma.db.cart.findFirst({
+      where: { userId },
+      select: { id: true }, 
+    });
+    if (!cart) {
+      cart = await this.prisma.db.cart.create({
+        data: { userId },
+        select: { id: true },
+      });
+    }
 
     const cartItem = await this.prisma.db.cartItem.upsert({
       where: { cartId_variantId: { cartId: cart.id, variantId } },
@@ -106,9 +150,9 @@ export class CartsService {
   }
 
   async getCartForCheckout(userId: string): Promise<CartWithItems> {
-    const cart = await this.prisma.db.cart.findFirst({
+    const cart = await this.prisma.db.cart.findUnique({
       where: { userId },
-      include: cartWithItemsInclude,
+      select: checkoutCartSelect,
     });
 
     if (!cart || cart.cartItems.length === 0) {

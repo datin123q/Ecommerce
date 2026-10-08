@@ -3,7 +3,10 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { EmailStrategyFactory } from './email-strategy.factory';
 
-@Processor('mail-queue', { concurrency: 10 })
+@Processor('mail-queue', {
+  concurrency: 10,
+//   limiter: { max: 1, duration: 500 },
+})
 export class MailProcessor extends WorkerHost {
     private readonly logger = new Logger(MailProcessor.name);
 

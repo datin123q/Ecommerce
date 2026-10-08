@@ -11,6 +11,9 @@ import { RedisCacheService } from '../../redis/redisCache.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { VouchersService } from '../vouchers/vouchers.service';
 import { CartsService } from '../carts/carts.service';
+import { Queue } from 'bullmq';
+import { InjectQueue } from '@nestjs/bullmq';
+import { RedisInventoryService } from '../inventory/redis-inventory.service';
 
 
 export type CartWithItems = Prisma.CartGetPayload<{
@@ -41,28 +44,61 @@ export class OrdersService {
     private readonly inventoryService: InventoryService, 
     private readonly voucherService: VouchersService,
     private readonly cartsService: CartsService,
+    private readonly redisInventoryService: RedisInventoryService,
+    @InjectQueue('order-queue') private readonly orderQueue: Queue,
   ) {}
 
   //  PUBLIC METHODS
   async createOrder(userId: string, dto: CreateOrderDto) {
     const cart = await this.cartsService.getCartForCheckout(userId);    
     const variantIds = cart.cartItems.map(item => item.variantId);
-    const inventories = await this.inventoryService.getInventoriesByVariantIds(variantIds);
     
     const voucher = dto.voucherCode 
       ? await this.voucherService.validateAndGetVoucher(dto.voucherCode) 
       : null;
+    const isFlashSale = await this.redisInventoryService.checkIfFlashSaleActive(variantIds);
+    // === FLASH SALE 
+    if (isFlashSale) {
+      const pricing = PriceCalculation.calculate(cart.cartItems, voucher);
+      
+      for (const item of cart.cartItems) {
+        await this.redisInventoryService.executeDeduct(item.variantId, item.quantity);
+      }
+      const cacheKey = this.cartsService.getCacheKey(userId);
+      this.cacheService.del(cacheKey).catch(e => console.log('Lỗi xóa cache:', e));
 
+      await this.orderQueue.add(
+        'process-flash-sale-db',
+        { 
+          userId, 
+          cartId: cart.id, // Chỉ truyền cartId
+          pricing,
+          voucherCode: dto.voucherCode
+        },
+        { removeOnComplete: true, attempts: 3 }
+      );
+
+      return {
+        success: true,
+        message: 'Đơn hàng Flash Sale đang được xử lý thành công!',
+        status: OrderStatus.PENDING
+      };
+    }
+
+    // === ĐƠN HÀNG BÌNH THƯỜNG ===
+    const inventories = await this.inventoryService.getInventoriesByVariantIds(variantIds);
+    
     const allocatedItems: AllocatedItem[] = InventoryAllocation.allocate(cart.cartItems, inventories);
     const pricing: PricingResult = PriceCalculation.calculate(cart.cartItems, voucher);
     const itemsSnapshot = this.buildOrderItemsSnapshot(cart, allocatedItems);
 
-    const order = await this.executeOrderTransaction(userId, cart.id, pricing, itemsSnapshot);
+    const order = await this.executeOrderTransaction(userId, pricing, itemsSnapshot);
 
-    this.postOrderCreation({ id: order.id, userId });
-
+    await this.postOrderCreation({ id: order.id, userId }, cart.id);
+ 
     return order;
   }
+
 
   async cancelOrder(userId: string, orderId: string) {
     const order = await this.validateAndGetOrderForCancel(userId, orderId);
@@ -112,8 +148,7 @@ export class OrdersService {
     });
   }
 
-  // PRIVATE METHODS
-  private buildOrderItemsSnapshot(
+  public buildOrderItemsSnapshot(
     cart: CartWithItems, 
     allocatedItems: AllocatedItem[]
   ): Prisma.OrderItemCreateManyOrderInput[] {
@@ -134,9 +169,8 @@ export class OrdersService {
     });
   }
 
-  private async executeOrderTransaction(
-    userId: string, 
-    cartId: string, 
+  async executeOrderTransaction(
+    userId: string,  
     pricing: PricingResult, 
     items: Prisma.OrderItemCreateManyOrderInput[]
   ) {
@@ -151,9 +185,6 @@ export class OrdersService {
         include: { orderItems: true },
       });
 
-      // 2. Gọi service trừ kho & ghi sổ
-      await this.inventoryService.deductStockAndLog(tx, items as AllocatedItem[], userId);
-
       // 3. Gọi service áp mã giảm giá
       if (pricing.appliedVoucherId) {
         await this.voucherService.applyVoucher(
@@ -165,11 +196,15 @@ export class OrdersService {
         );
       }
 
-      // 4. Xóa giỏ hàng 
-      await tx.cartItem.deleteMany({ where: { cartId } });
+      // 2. Gọi service trừ kho & ghi sổ
+      await this.inventoryService.deductStockAndLog(tx, items as AllocatedItem[], userId);
 
       return newOrder;
-    });
+    },{
+      maxWait: 5000,
+      timeout: 15000,
+      }
+    );
   }
 
   private async validateAndGetOrderForCancel(userId: string, orderId: string) {
@@ -189,7 +224,7 @@ export class OrdersService {
     return order;
   }
 
-  private async executeCancelTransaction(
+  public async executeCancelTransaction(
     userId: string, 
     order: Prisma.OrderGetPayload<{ include: { orderItems: true } }>
   ) {
@@ -221,7 +256,7 @@ export class OrdersService {
     });
   }
 
-  private postOrderCreation(order: { id: string, userId: string }) {
+  public async postOrderCreation(order: { id: string, userId: string }, cartId: string) {
     this.eventEmitter.emit('order.created', {
       userId: order.userId,
       content: `Đơn hàng mã số ${order.id} đã được xác nhận`
@@ -232,6 +267,20 @@ export class OrdersService {
     this.cacheService.del(cacheKey).catch(err => 
       this.logger.error(`Lỗi xóa cache giỏ hàng: ${err.message}`)
     );
+
+    await this.orderQueue.add(
+      'cleanup-cart', 
+      { 
+        userId: order.userId, 
+        orderId: order.id,
+        cartId: cartId 
+      }, 
+      {
+        removeOnComplete: true, 
+        attempts: 3, 
+        backoff: { type: 'exponential', delay: 2000 }
+      }
+    );
   }
 
   private postOrderCancellation(order: { id: string, userId: string }) {
@@ -240,5 +289,11 @@ export class OrdersService {
       orderId: order.id,
       content: `Đơn hàng mã số ${order.id} đã được hủy thành công`,
     });
+  }
+
+  async startFlashSale(variantId: string, quantity: number): Promise<void> {
+    const key = `inventory:variant:${variantId}`;
+    await this.cacheService.setNumber(key, quantity, 60 * 60 * 1000);
+
   }
 }

@@ -77,11 +77,10 @@ export class CategoriesService {
     return categories;
   }
 
-  async findOne(id: string): Promise<CategoryWithProducts> {
+  async findOne(id: string): Promise<string> {
     const cacheKey = this.getCategoryCacheKey(id);
 
-    // Đổi tên biến cho chuẩn (1 danh mục thì dùng số ít: cachedCategory)
-    const cachedCategory = await this.cacheService.get<CategoryWithProducts>(cacheKey);
+    const cachedCategory = await this.cacheService.getRaw(cacheKey);
     if (cachedCategory) return cachedCategory;
 
     const category = await this.prisma.db.category.findUnique({
@@ -92,7 +91,7 @@ export class CategoriesService {
     if (!category) throw new NotFoundException('Không tìm thấy danh mục');
 
     await this.cacheService.set(cacheKey, category);
-    return category as CategoryWithProducts;
+    return JSON.stringify(category);
   }
 
   async update(id: string, updateCategoryDto: UpdateCategoryDto, adminId: string) {

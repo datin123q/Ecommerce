@@ -74,6 +74,15 @@ export class UsersService {
     const updatedUser = await this.prisma.db.user.update({
       where: { id: userId },
       data: dataToUpdate,
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        avatar: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
     this.eventEmitter.emit('profile.update', {

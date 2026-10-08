@@ -2,19 +2,20 @@ import { BadRequestException, Injectable, NotFoundException, UnauthorizedExcepti
 import { UsersService } from '../users/users.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { JwtService } from '@nestjs/jwt';
+import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { User } from '@prisma/client';
-import * as argon2 from 'argon2';
+import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import { JwtSignOptions } from '@nestjs/jwt';
 
 const TOKEN_EXPIRATION_MS = 15 * 60 * 1000; // 15 phút
 const MAIL_QUEUE_NAME = 'mail-queue';
 const JOB_VERIFY_ACCOUNT = 'verify-account';
 const JOB_FORGOT_PASSWORD = 'forgot-password';
+const BCRYPT_SALT_ROUNDS = 10;
+
 interface JwtPayload {
   sub: string;
   email: string;
@@ -39,7 +40,9 @@ export class AuthService {
       throw new BadRequestException('Email này đã được sử dụng');
     }
 
-    const hashedPassword = await argon2.hash(password);
+    // Dùng bcrypt băm mật khẩu
+    const hashedPassword = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
+    
     const newUser = await this.usersService.create({
       email,
       password: hashedPassword,
@@ -123,7 +126,8 @@ export class AuthService {
       throw new BadRequestException('Token không hợp lệ hoặc đã hết hạn!');
     }
 
-    const hashedPassword = await argon2.hash(newPassword);
+    // Dùng bcrypt cho mật khẩu mới
+    const hashedPassword = await bcrypt.hash(newPassword, BCRYPT_SALT_ROUNDS);
 
     await this.usersService.updateUser(user.id, {
       password: hashedPassword,
@@ -142,7 +146,8 @@ export class AuthService {
       throw new BadRequestException('Email hoặc mật khẩu không đúng');
     }
     
-    const isPasswordValid = await argon2.verify(user.password, password);
+    // Dùng bcrypt để so sánh
+    const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       throw new BadRequestException('Email hoặc mật khẩu không đúng');
     }
@@ -155,7 +160,7 @@ export class AuthService {
 
     if (!user) {
       const randomPassword = crypto.randomBytes(16).toString('hex');
-      const hashedPassword = await argon2.hash(randomPassword);
+      const hashedPassword = await bcrypt.hash(randomPassword, BCRYPT_SALT_ROUNDS);
 
       user = await this.usersService.create({
         email: socialUser.email,
@@ -182,8 +187,9 @@ export class AuthService {
       throw new UnauthorizedException('Tài khoản không tồn tại hoặc đã bị đăng xuất');
     }
 
-    const isRefreshTokenValid = await argon2.verify(user.refreshToken, providedRefreshToken);
-    if (!isRefreshTokenValid) {
+    // So sánh trực tiếp chuỗi SHA-256
+    const hashedProvidedToken = this.hashToken(providedRefreshToken);
+    if (user.refreshToken !== hashedProvidedToken) {
       throw new UnauthorizedException('Refresh Token không hợp lệ hoặc đã bị thu hồi');
     }
 
@@ -228,7 +234,7 @@ export class AuthService {
       expiresIn: this.configService.getOrThrow<string>('JWT_REFRESH_EXPIRES_IN') as JwtSignOptions['expiresIn'],
     });
 
-    const hashedRefreshToken = await argon2.hash(refreshToken);
+    const hashedRefreshToken = this.hashToken(refreshToken);
     await this.usersService.updateRefreshToken(user.id, hashedRefreshToken);
     
     return {

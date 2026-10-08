@@ -82,6 +82,7 @@ model Notification {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
+  @@index([userId, createdAt(sort: Desc)])
   @@map("Notifications")
 }
 
@@ -96,6 +97,8 @@ model AuditLog {
   newValues Json?
   createdAt DateTime    @default(now())
 
+  @@index([userId])
+  @@index([entityId, entity])
   @@map("Audits_log")
 }
 
@@ -105,7 +108,6 @@ model ScheduledJobLog{
   status          String
   message         String?
   recordsAffected Int?
-
   createdAt DateTime    @default(now())
 
   @@map("ScheduledJobLog")
@@ -143,6 +145,7 @@ model Product {
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
+  @@index([categoryId])
   @@map("Products")
 }
 
@@ -158,9 +161,9 @@ model ProductVariant {
   inventories Inventory[]
   cartItems   CartItem[]
   orderItems  OrderItem[]
-
   deletedAt DateTime? 
 
+  @@index([productId])
   @@map("Product_Variants")
 }
 
@@ -191,6 +194,7 @@ model Inventory {
   updatedAt DateTime @updatedAt
 
   @@unique([warehouseId, variantId])
+  @@index([variantId, quantity(sort: Desc)])
   @@map("Inventories")
 }
 
@@ -246,6 +250,7 @@ model Order {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([userId, createdAt(sort: Desc)]) 
   @@map("Orders")
 }
 
@@ -261,6 +266,8 @@ model OrderItem {
   order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
   inventoryId String?
 
+  @@index([orderId])
+  @@index([variantId])
   @@map("OrderItems")
 }
 
@@ -306,5 +313,7 @@ model VoucherUsage {
   
   createdAt DateTime @default(now())
 
+  @@unique([voucherId, orderId])
+  @@index([userId])
   @@map("VoucherUsages")
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Query, Res } from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { CreateProductVariantDto } from './dto/create-product.dto';
@@ -12,6 +12,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import { GetProductsDto } from './dto/get-products.dto';
+import { Response } from 'express';
 
 interface AuthenticatedUser {
   id: string;
@@ -61,14 +62,18 @@ export class ProductsController {
 
   @Get()
   @ApiOperation({ summary: 'Lấy danh sách sản phẩm có phân trang và sắp xếp' })
-  findAll(@Query() query: GetProductsDto) {
-    return this.productsService.findAll(query);
+  async findAll(@Query() query: GetProductsDto, @Res() res: Response) {
+    const dataString = await this.productsService.findAll(query);
+    
+    res.setHeader('Content-Type', 'application/json');
+    return res.send(dataString);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Lấy chi tiết một sản phẩm' })
-  findOne(@Param('id') id: string) {
-    return this.productsService.findOne(id);
+  async findOne(@Param('id') id: string, @Res() res: Response) {
+    const dataString = await this.productsService.findOne(id);
+    res.setHeader('Content-Type', 'application/json');
+    return res.send(dataString);
   }
 
   @Delete(':id')

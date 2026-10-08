@@ -4,6 +4,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { NotificationsGateway } from './notifications.gateway';
 import Redis from 'ioredis';
+import { GetNotificationsDto } from './dto/get-notifications.dto';
 
 @Injectable()
 export class NotificationsService {
@@ -25,21 +26,25 @@ export class NotificationsService {
     await this.redisClient.del(this.getCacheKey(userId));
   }
 
-  async getUserNotifications(userId: string) {
+  async getUserNotifications(userId: string, query: GetNotificationsDto) {
     const cacheKey = this.getCacheKey(userId);
     const cachedStr = await this.redisClient.get(cacheKey);
     
     if (cachedStr) {
       return JSON.parse(cachedStr);
     }
+    const { page = 1, limit = 1 } = query;
+    const skip = (page - 1) * limit;
+    const [notification, total] = await Promise.all([
+      this.prisma.db.notification.findMany({
+        skip, take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.db.inventory.count(),
+    ]);
 
-    const notifications = await this.prisma.db.notification.findMany({
-      where: { userId },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    await this.redisClient.set(cacheKey, JSON.stringify(notifications), 'PX', this.CACHE_TTL);
-    return notifications;
+    await this.redisClient.set(cacheKey, JSON.stringify(notification), 'PX', this.CACHE_TTL);
+    return notification;
   }
 
   async getUnreadCount(userId: string) {

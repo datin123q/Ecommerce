@@ -6,6 +6,7 @@ import { StockInDto } from './dto/stock-in.dto';
 import { StockOutDto } from './dto/stock-out.dto';
 import { TransactionType, Prisma, Inventory } from '@prisma/client';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { GetInventoriesDto } from './dto/get-inventories.dto';
 
 export type DeductItem = {
   inventoryId: string;
@@ -35,8 +36,26 @@ export class InventoryService {
     return this.prisma.db.warehouse.findMany();
   }
 
-  getInventory(){
-    return this.prisma.db.inventory.findMany();
+  async getInventory(query: GetInventoriesDto){
+    const { page = 1, limit = 1 } = query;
+    const skip = (page - 1) * limit;
+    const [inventories, total] = await Promise.all([
+      this.prisma.db.inventory.findMany({
+        skip, take: limit,
+      }),
+      this.prisma.db.inventory.count(),
+    ]);
+
+    const result = {
+      data: inventories,
+      meta: {
+        page, limit, total,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1,
+      },
+    };
+    return JSON.stringify(result);
   }
 
   async update(id: string, updateWarehouseDto: UpdateWarehouseDto, adminId: string) {
@@ -113,37 +132,35 @@ export class InventoryService {
   ) {
     if (items.length === 0) return [];
 
-    const updatedInventories: Inventory[] = [];
+    const updatedInventories: any[] = [];
     const transactionLogs: Prisma.InventoryTransactionCreateManyInput[] = [];
 
-    for (const item of [...items].sort((a, b) => a.inventoryId.localeCompare(b.inventoryId))) {
+    for (const item of items) {
       if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
         throw new BadRequestException('Số lượng cần trừ kho phải là số nguyên dương');
       }
-      
-      const result = await tx.inventory.updateMany({
-        where: { id: item.inventoryId, quantity: { gte: item.quantity } },
-        data: { quantity: { decrement: item.quantity } },
-      });
-
-      if (result.count !== 1) {
-        const inventory = await tx.inventory.findUnique({ where: { id: item.inventoryId } });
-        throw new BadRequestException(
-          `Số lượng tồn kho không đủ (Hiện có: ${inventory?.quantity ?? 0})`,
-        );
-      }
-
-      const updatedInventory = await tx.inventory.findUnique({ where: { id: item.inventoryId } });
-      if (!updatedInventory) {
-        throw new BadRequestException('Không tìm thấy bản ghi tồn kho');
-      }
-      updatedInventories.push(updatedInventory);
       transactionLogs.push({
         type: TransactionType.OUT,
         quantity: item.quantity,
         inventoryId: item.inventoryId,
         userId,
       });
+    }
+
+    for (const item of [...items].sort((a, b) => a.inventoryId.localeCompare(b.inventoryId))) {
+      try {
+        const updatedInventory = await tx.inventory.update({
+          // Check available stock and decrement atomically under concurrency.
+          where: { id: item.inventoryId, quantity: { gte: item.quantity } },
+          data: { quantity: { decrement: item.quantity } }
+        });
+        updatedInventories.push(updatedInventory);
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+          throw new BadRequestException('Sản phẩm không tồn tại hoặc số lượng tồn kho không đủ.');
+        }
+        throw error;
+      }
     }
 
     await tx.inventoryTransaction.createMany({ data: transactionLogs });

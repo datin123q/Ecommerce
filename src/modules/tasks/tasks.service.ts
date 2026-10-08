@@ -173,7 +173,15 @@ export class TasksService {
                 userId: user.id,
                 products: products, 
             },
-            opts: { removeOnComplete: true, attempts: 3 }
+            opts: {
+                removeOnComplete: true,
+                attempts: 3,
+                backoff: {
+                    type: 'exponential',
+                    delay: 5_000,
+                    jitter: 0.5,
+                },
+                }
         }));
 
         await this.mailQueue.addBulk(jobs);

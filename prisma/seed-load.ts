@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import * as bcrypt from 'bcrypt';
 import { Pool } from 'pg';
 import { PrismaPg } from '@prisma/adapter-pg';
 import {
@@ -9,7 +10,6 @@ import {
   Role,
   TransactionType,
 } from '@prisma/client';
-import * as argon2 from 'argon2';
 
 type SeedConfig = {
   batch: string;
@@ -32,7 +32,7 @@ function readCount(name: string, fallback: number, maximum: number): number {
 }
 
 function readConfig(): SeedConfig {
-  const batch = (process.env.LOAD_SEED_BATCH ?? 'api-load-v1')
+  const batch = (process.env.LOAD_SEED_BATCH ?? 'test')
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '')
     .slice(0, 24);
@@ -110,10 +110,10 @@ async function main(): Promise<void> {
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
   try {
-    const password = await argon2.hash('LoadTest123!');
+    const password = await bcrypt.hash('123456', 10);
     const userRows = Array.from({ length: config.users }, (_, index) => ({
       id: stableId(config.batch, 'user', String(index)),
-      email: `load-${config.batch}-${String(index).padStart(6, '0')}@example.test`,
+      email: `${config.batch}${String(index).padStart(6, '0')}@example.test`,
       password,
       fullName: `Load Test User ${index}`,
       role:
@@ -122,7 +122,7 @@ async function main(): Promise<void> {
           : index === 1
             ? Role.WAREHOUSE_MANAGER
             : Role.CUSTOMER,
-      isVerified: true,
+      isVerified: numberFor(`${config.batch}:user:${index}`, 10) < 1,
     }));
 
     console.log(`Database local: ${databaseName}; batch: ${config.batch}`);

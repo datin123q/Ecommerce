@@ -79,7 +79,11 @@ export class ProductsService {
   }
 
   async updateProduct(id: string, updateProductDto: UpdateProductDto, adminId: string) {
-    const oldProduct = await this.findOne(id); 
+    const oldProduct = await this.prisma.db.product.findUnique({
+      where: { id },
+      include: { category: true, variants: true },
+    });
+    if (!oldProduct) throw new NotFoundException('Không tìm thấy sản phẩm');
 
     const newProduct = await this.prisma.db.product.update({
       where: { id },
@@ -148,8 +152,11 @@ export class ProductsService {
   }
 
   async remove(id: string, adminId: string) {
-    const oldProduct = await this.findOne(id); 
-
+    const oldProduct = await this.prisma.db.product.findUnique({
+      where: { id },
+      include: { category: true, variants: true },
+    });
+    if (!oldProduct) throw new NotFoundException('Không tìm thấy sản phẩm');
     const deletedProduct = await this.prisma.db.$transaction(async (tx) => {
       await tx.productVariant.deleteMany({ where: { productId: id } });
       return tx.product.delete({ where: { id } });
@@ -182,8 +189,8 @@ export class ProductsService {
   async findAll(query: GetProductsDto) {
     const cacheKey = this.getPaginatedCacheKey(query);
     
-    const cachedProducts = await this.cacheService.get<any>(cacheKey); // Vẫn dùng <any> tạm cho object phân trang
-    if (cachedProducts) return cachedProducts;
+    const cachedString = await this.cacheService.getRaw(cacheKey);
+    if (cachedString) return cachedString;
     
     const { page = 1, limit = 1, sortBy = 'name', sortOrder = 'asc' } = query;
     const skip = (page - 1) * limit;
@@ -208,13 +215,13 @@ export class ProductsService {
     };
 
     await this.cacheService.set(cacheKey, result);
-    return result;
+    return JSON.stringify(result);
   }
 
-  async findOne(id: string): Promise<ProductWithRelations> {
+  async findOne(id: string): Promise<string> {
     const cacheKey = this.getProductCacheKey(id);
     
-    const cachedProduct = await this.cacheService.get<ProductWithRelations>(cacheKey);
+    const cachedProduct = await this.cacheService.getRaw(cacheKey);
     if (cachedProduct) return cachedProduct;
     
     const product = await this.prisma.db.product.findUnique({
@@ -225,7 +232,8 @@ export class ProductsService {
     if (!product) throw new NotFoundException('Không tìm thấy sản phẩm');
     
     await this.cacheService.set(cacheKey, product);
-    return product as ProductWithRelations;
+    
+    return JSON.stringify(product);
   }
 
   async findOneVariant(id: string): Promise<VariantWithProduct> {

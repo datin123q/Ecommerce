@@ -7,6 +7,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
 import { ApiHeader } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
+import { StartFlashSaleDto } from './dto/flash-sale.dto';
 
 interface AuthenticatedUser {
   id: string;
@@ -54,6 +55,16 @@ export class OrdersController {
     @Param('id') orderId: string, @CurrentUser() user: AuthenticatedUser
   ) {
     return this.ordersService.cancelOrder(user.id, orderId);
+  }
+
+  @Post('start')
+  async startFlashSale(@Body() payload: StartFlashSaleDto) {
+    await this.ordersService.startFlashSale(payload.variantId, payload.quantity);
+    
+    return {
+      success: true,
+      message: `Đã kích hoạt Flash Sale cho sản phẩm ${payload.variantId} với số lượng ${payload.quantity}`,
+    };
   }
 
 }
