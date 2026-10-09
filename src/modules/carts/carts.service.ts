@@ -54,30 +54,44 @@ export class CartsService {
     return `cart_${userId}_v`;
   }
 
-  async getMyCart(userId: string): Promise<CartWithItems> {
+async getMyCart(userId: string): Promise<CartWithItems> {
     const cacheKey = this.getCacheKey(userId);
+    const recentWriteKey = `cart_recently_updated:${userId}`;
 
     const cachedCart = await this.cacheService.get<CartWithItems>(cacheKey);
     if (cachedCart) return cachedCart;
 
-    const cart = await this.getOrCreateCartInDB(userId);
+    const justUpdated = await this.cacheService.get<string>(recentWriteKey);
+
+    let cart: CartWithItems;
+
+    if (justUpdated) {
+      cart = (await this.prisma.masterClient.cart.findFirst({
+        where: { userId },
+        include: cartWithItemsInclude,
+      })) as CartWithItems;
+    } else {
+      cart = (await this.prisma.db.cart.findFirst({
+        where: { userId },
+        include: cartWithItemsInclude,
+      })) as CartWithItems;
+    }
+
+    if (!cart) {
+      cart = await this.getOrCreateCartInDB(userId);
+    }
 
     await this.cacheService.set(cacheKey, cart);
     return cart;
   }
 
   private async getOrCreateCartInDB(userId: string): Promise<CartWithItems> {
-    let cart = await this.prisma.db.cart.findFirst({
+const cart = await this.prisma.db.cart.upsert({
       where: { userId },
+      update: {},
+      create: { userId }, 
       include: cartWithItemsInclude,
     });
-
-    if (!cart) {
-      cart = await this.prisma.db.cart.create({
-        data: { userId },
-        include: cartWithItemsInclude,
-      });
-    }
 
     return cart as CartWithItems;
   }
@@ -121,7 +135,7 @@ export class CartsService {
       `Đã thêm ${variant.product.name} - ${variant.name} x ${quantity} vào giỏ hàng`
     );
     await this.cacheService.del(this.getCacheKey(userId));
-
+    await this.cacheService.setNumber(`cart_recently_updated:${userId}`, 1, 3000);
     return cartItem;
   }
 

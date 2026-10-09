@@ -1,12 +1,12 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import Redis from "ioredis";
+import Redis, { Cluster } from "ioredis";
 
 const TIME_TO_LIVE = 600000
 
 @Injectable()
 export class RedisCacheService{
     private readonly logger = new Logger(RedisCacheService.name);
-    constructor(@Inject('REDIS_CLIENT') private readonly redisClient: Redis){}
+    constructor(@Inject('REDIS_CLIENT') private readonly redisClient: Redis | Cluster) {}
 
     async get<T>(key: string): Promise<T | null> {
         const data = await this.redisClient.get(key);
@@ -33,30 +33,39 @@ export class RedisCacheService{
     }
     async delByPattern(pattern: string): Promise<void> {
         try {
-        let cursor = '0'; 
         const keysToDelete: string[] = [];
 
-        do {
-            const [newCursor, foundKeys] = await this.redisClient.scan(
-            cursor,
-            'MATCH',
-            pattern,
-            'COUNT',
-            100 
-            );
-            
-            cursor = newCursor;
-            keysToDelete.push(...foundKeys);
-        } while (cursor !== '0');
+        // Kiểm tra xem đang chạy Cluster hay Standalone
+        if (this.redisClient instanceof Redis.Cluster) {
+            // Quét trên toàn bộ các node Master của Cluster
+            const nodes = this.redisClient.nodes('master');
+            for (const node of nodes) {
+            await this.scanNode(node, pattern, keysToDelete);
+            }
+        } else {
+            // Quét trên Node đơn bình thường
+            await this.scanNode(this.redisClient, pattern, keysToDelete);
+        }
 
         if (keysToDelete.length > 0) {
-            await this.redisClient.del(...keysToDelete);
+            const pipeline = this.redisClient.pipeline();
+            keysToDelete.forEach((key) => pipeline.del(key));
+            await pipeline.exec();
+            
             this.logger.log(`Đã dọn dẹp ${keysToDelete.length} keys khớp với pattern: ${pattern}`);
         }
-        
         } catch (error) {
         this.logger.error(`Lỗi khi xóa cache theo pattern [${pattern}]: ${error.message}`);
         }
+    }
+
+    private async scanNode(node: Redis | any, pattern: string, resultKeys: string[]) {
+        let cursor = '0';
+        do {
+        const [newCursor, foundKeys] = await node.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = newCursor;
+        resultKeys.push(...foundKeys);
+        } while (cursor !== '0');
     }
     async setNX(key: string, value: string, ttlSeconds: number): Promise<boolean> {
         try {

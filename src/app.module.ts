@@ -18,7 +18,7 @@ import { redisStore } from 'cache-manager-redis-yet';
 import { BullModule } from '@nestjs/bullmq';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import Redis from 'ioredis';
-import { RedisModule } from './redis/redis.module';
+import { getRedisConnection, RedisModule } from './redis/redis.module';
 import { AppLoggerMiddleware } from './common/middlewares/app-logger.middleware';
 import {ScheduleModule} from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -53,10 +53,8 @@ import { PrometheusModule } from '@willsoto/nestjs-prometheus';
     BullModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        connection: {
-          host: configService.get<string>('REDIS_HOST') || 'localhost',
-          port: configService.get<number>('REDIS_PORT') || 6379,
-        },
+        connection: getRedisConnection(configService),
+        prefix: configService.get<string>('REDIS_CLUSTER_MODE') === 'true' ? '{my-bullmq}' : 'bull',
       }),
       inject: [ConfigService],
     }),
@@ -78,9 +76,7 @@ import { PrometheusModule } from '@willsoto/nestjs-prometheus';
           // },
         ],
 
-        storage: new ThrottlerStorageRedisService(
-          `redis://${configService.get<string>('REDIS_HOST') || 'localhost'}:${configService.get<number>('REDIS_PORT') || 6379}`,
-        ),
+        storage: new ThrottlerStorageRedisService(getRedisConnection(configService) as Redis),
       }),
     }),
     MailerModule.forRootAsync({
@@ -123,20 +119,8 @@ import { PrometheusModule } from '@willsoto/nestjs-prometheus';
   ],
   controllers: [],
   providers: [
-    {
-      provide: 'REDIS_CLIENT',
-      useFactory: (configService: ConfigService) => {
-        return new Redis({
-          host: configService.get<string>('REDIS_HOST') || 'localhost',
-          port: configService.get<number>('REDIS_PORT') || 6379,
-        });
-      },
-      inject: [ConfigService],
-    },
     { provide: APP_GUARD, useClass: ThrottlerGuard }
   ],
-  exports: ['REDIS_CLIENT'],
-
 })
 export class AppModule implements NestModule { 
   configure(consumer: MiddlewareConsumer) {

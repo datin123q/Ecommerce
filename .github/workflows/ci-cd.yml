@@ -12,7 +12,8 @@ jobs:
 
     env:
       DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
-
+      DATABASE_REPLICA_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
+      REDIS_CLUSTER_MODE: "false"
       REDIS_HOST: "localhost"
       REDIS_PORT: 6379
 
@@ -86,6 +87,9 @@ jobs:
 
       - name: Generate Prisma Client
         run: npx prisma generate
+      
+      - name: Khởi tạo cấu trúc Database cho Test 
+        run: npx prisma db push
 
       - name: Build
         run: npm run build
