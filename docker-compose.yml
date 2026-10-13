@@ -11,6 +11,7 @@ services:
       POSTGRESQL_REPLICATION_MODE: master
       POSTGRESQL_REPLICATION_USER: replicator
       POSTGRESQL_REPLICATION_PASSWORD: replpassword
+      POSTGRESQL_MAX_CONNECTIONS: 200
     ports:
       - "5432:5432" 
     volumes:
@@ -29,6 +30,7 @@ services:
       POSTGRESQL_REPLICATION_USER: replicator
       POSTGRESQL_REPLICATION_PASSWORD: replpassword
       POSTGRESQL_PASSWORD: rootpassword
+      POSTGRESQL_MAX_CONNECTIONS: 200
     ports:
       - "5433:5432" 
     volumes:

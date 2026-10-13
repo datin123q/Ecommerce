@@ -2,11 +2,8 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job } from 'bullmq';
 import { Logger } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
-import { RedisCacheService } from '../redis/redisCache.service';
-import { InventoryAllocation } from 'src/modules/orders/domain/inventory-allocation';
 import { OrdersService } from 'src/modules/orders/orders.service';
-import { InventoryService } from 'src/modules/inventory/inventory.service';
-import { CartsService } from 'src/modules/carts/carts.service'; 
+import { RedisInventoryService } from 'src/modules/inventory/redis-inventory.service';
 
 @Processor('order-queue',{concurrency: 5,})
 export class OrderProcessor extends WorkerHost {
@@ -14,10 +11,9 @@ export class OrderProcessor extends WorkerHost {
     
   constructor(
     private readonly prisma: PrismaService,
-    private readonly cacheService: RedisCacheService,
     private readonly ordersService: OrdersService,
-    private readonly inventoryService: InventoryService,
-    private readonly cartsService: CartsService 
+    private readonly redisInventoryService: RedisInventoryService,
+    
   ) {
     super();
   }
@@ -33,37 +29,49 @@ export class OrderProcessor extends WorkerHost {
         break; 
       }
       
-      case 'process-flash-sale-db': { 
-        this.logger.log(`[Worker] Bắt đầu ghi DB Flash Sale - User: ${job.data.userId}`);
-        const { userId, pricing, cartId } = job.data;
-        
+      case 'process-flash-sale-db': {
+        const {
+          userId,
+          cartId,
+          pricing,
+          itemsSnapshot,
+          flashReservation,
+        } = job.data;
+
+        let order;
+
         try {
-          const cart = await this.cartsService.getCartForCheckout(userId);
-          if (!cart || cart.cartItems.length === 0) {
-            throw new Error(`Giỏ hàng ${cartId} trống hoặc không tồn tại`);
+          order = await this.ordersService.executeOrderTransaction(
+            userId,
+            pricing,
+            itemsSnapshot,
+          );
+        } catch (error) {
+          const maxAttempts = job.opts.attempts ?? 1;
+          const finalAttempt = job.attemptsMade + 1 >= maxAttempts;
+
+          if (finalAttempt) {
+            await this.redisInventoryService.restoreStock(
+              flashReservation.variantId,
+              flashReservation.quantity,
+            );
           }
 
-          const variantIds = cart.cartItems.map(item => item.variantId);
-          const inventories = await this.inventoryService.getInventoriesByVariantIds(variantIds);
-          
-          const allocatedItems = InventoryAllocation.allocate(cart.cartItems, inventories);
-          
-          const itemsSnapshot = this.ordersService.buildOrderItemsSnapshot(
-            cart, 
-            allocatedItems
-          );
-
-          const newOrder = await this.ordersService.executeOrderTransaction(userId, pricing, itemsSnapshot);
-          
-          await this.ordersService.postOrderCreation({ id: newOrder.id, userId }, cartId);
-
-          this.logger.log(`[Worker] Đồng bộ THÀNH CÔNG! OrderID: ${newOrder.id}`);
-        } catch (error) {
-          this.logger.error(`[Worker] Lỗi đồng bộ DB: ${error.message}`);
-          throw error; 
+          throw error;
         }
+
+        try {
+          await this.ordersService.postOrderCreation(
+            { id: order.id, userId },
+            cartId,
+          );
+        } catch (error) {
+          this.logger.error(`Tạo đơn thành công nhưng dọn giỏ lỗi: ${error.message}`);
+        }
+
+        return order;
+      }
         break;
       }
     }
-  }
 }

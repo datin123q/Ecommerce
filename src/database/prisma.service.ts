@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/unbound-method */
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import {
@@ -26,9 +27,8 @@ type SoftDeleteClient = Omit<PrismaClient, '$on'>;
 
 @Injectable()
 export class PrismaService implements OnModuleInit, OnModuleDestroy {
-  public readonly masterClient: PrismaClient;
-  public readonly replicaClient: PrismaClient;
-
+  public readonly masterClient: PrismaClient<Prisma.PrismaClientOptions, 'query' >;
+  public readonly replicaClient: PrismaClient<Prisma.PrismaClientOptions, 'query' >;
   public readonly db: SoftDeleteClient;
 
   constructor() {
@@ -39,20 +39,25 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     masterPool.on('error', (err) => {
       console.error('Lỗi kết nối ngầm ở Master DB:', err.message);
     });
-    this.masterClient = new PrismaClient({ adapter: new PrismaPg(masterPool), log: ['query', 'info', 'warn', 'error'], });
+    this.masterClient = new PrismaClient({ adapter: new PrismaPg(masterPool), log: [ { emit: 'event', level: 'query' } ], });
 
     const replicaPool = new Pool({
       connectionString: process.env.DATABASE_REPLICA_URL,
       max: 20,
     });
     replicaPool.on('error', (err) => {
-      console.error('Lỗi kết nối ngầm ở Master DB:', err.message);
+      console.error('Lỗi kết nối ngầm ở Slave DB:', err.message);
     });
-    this.replicaClient = new PrismaClient({ adapter: new PrismaPg(replicaPool), log: ['query', 'info', 'warn', 'error'], });
-
+    this.replicaClient = new PrismaClient({ adapter: new PrismaPg(replicaPool), log: [ { emit: 'event', level: 'query' } ], });
     const master = this.masterClient;
     const replica = this.replicaClient;
+    this.masterClient.$on('query', (e: Prisma.QueryEvent) => {
+      console.log(`[MASTER DB] Query: ${e.query} | Params: ${e.params}`);
+    });
 
+    this.replicaClient.$on('query', (e: Prisma.QueryEvent) => {
+      console.log(`[REPLICA DB] Query: ${e.query} | Params: ${e.params}`);
+    });
     this.db = master.$extends({
       query: {
         $allModels: {
@@ -111,10 +116,7 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
           },
           async count({ model, args }) {
             if (isSoftDeleteModel(model)) {
-              args.where = {
-                ...(args.where as object),
-                deletedAt: null,
-              };
+              applySoftDeleteFilters(model, args);
             }
             const delegate = replica[
               model as keyof PrismaClient

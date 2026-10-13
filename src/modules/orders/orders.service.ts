@@ -59,31 +59,63 @@ export class OrdersService {
     const isFlashSale = await this.redisInventoryService.checkIfFlashSaleActive(variantIds);
     // === FLASH SALE 
     if (isFlashSale) {
-      const pricing = PriceCalculation.calculate(cart.cartItems, voucher);
-      
-      for (const item of cart.cartItems) {
-        await this.redisInventoryService.executeDeduct(item.variantId, item.quantity);
+      if (cart.cartItems.length !== 1) {
+        throw new BadRequestException(
+          'Đơn Flash Sale chỉ được chứa một sản phẩm.',
+        );
       }
-      const cacheKey = this.cartsService.getCacheKey(userId);
-      this.cacheService.del(cacheKey).catch(e => console.log('Lỗi xóa cache:', e));
+      const item = cart.cartItems[0];
 
-      await this.orderQueue.add(
-        'process-flash-sale-db',
-        { 
-          userId, 
-          cartId: cart.id, // Chỉ truyền cartId
-          pricing,
-          voucherCode: dto.voucherCode
-        },
-        { removeOnComplete: true, attempts: 3 }
+      const inventories = await this.inventoryService.getInventoriesByVariantIds([item.variantId]);
+
+      const allocatedItems = InventoryAllocation.allocate(cart.cartItems, inventories);
+
+      const itemsSnapshot = this.buildOrderItemsSnapshot(cart, allocatedItems);
+
+      const pricing = PriceCalculation.calculate(cart.cartItems, voucher);
+
+      await this.redisInventoryService.executeDeduct(
+        item.variantId,
+        item.quantity,
       );
+      try {
+          await this.orderQueue.add(
+            'process-flash-sale-db',
+            {
+              userId,
+              cartId: cart.id,
+              pricing,
+              itemsSnapshot,
+              flashReservation: {
+                variantId: item.variantId,
+                quantity: item.quantity,
+              },
+            },
+            {
+              removeOnComplete: true,
+              attempts: 3,
+              backoff: { type: 'exponential', delay: 2000 },
+            },
+          );
+        } catch (error) {
+          await this.redisInventoryService.restoreStock(
+            item.variantId,
+            item.quantity,
+          );
+          throw error;
+        }
 
-      return {
-        success: true,
-        message: 'Đơn hàng Flash Sale đang được xử lý thành công!',
-        status: OrderStatus.PENDING
-      };
-    }
+        const cacheKey = this.cartsService.getCacheKey(userId);
+        this.cacheService.del(cacheKey).catch((error) => {
+          this.logger.error(`Không xóa được cart cache: ${error.message}`);
+        });
+
+        return {
+          success: true,
+          message: 'Đơn hàng đang được xử lý.',
+          status: OrderStatus.PENDING,
+        };
+      }
 
     // === ĐƠN HÀNG BÌNH THƯỜNG ===
     const inventories = await this.inventoryService.getInventoriesByVariantIds(variantIds);
@@ -209,7 +241,7 @@ export class OrdersService {
 
   private async validateAndGetOrderForCancel(userId: string, orderId: string) {
     const order = await this.prisma.db.order.findUnique({
-      where: { id: orderId }, 
+      where: { id: orderId },
       include: { orderItems: true },
     });
 
@@ -293,7 +325,15 @@ export class OrdersService {
 
   async startFlashSale(variantId: string, quantity: number): Promise<void> {
     const key = `inventory:variant:${variantId}`;
-    await this.cacheService.setNumber(key, quantity, 60 * 60 * 1000);
+    const stock = await this.prisma.db.inventory.aggregate({
+      where: { variantId },
+      _sum: { quantity: true },
+    });
+    const availableStock = stock._sum.quantity ?? 0;
 
+    if (availableStock < quantity) {
+      throw new BadRequestException('Tồn kho không đủ để mở Flash Sale');
+    }
+    await this.cacheService.setNumber(key, quantity, 60 * 60 * 1000);
   }
 }

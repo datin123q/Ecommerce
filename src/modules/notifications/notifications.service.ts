@@ -1,10 +1,10 @@
-import { Injectable, Logger, Inject } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { NotificationsGateway } from './notifications.gateway';
-import Redis from 'ioredis';
 import { GetNotificationsDto } from './dto/get-notifications.dto';
+import { RedisCacheService } from '../../redis/redisCache.service';
 
 @Injectable()
 export class NotificationsService {
@@ -15,36 +15,37 @@ export class NotificationsService {
     private readonly prisma: PrismaService,
     private readonly gateway: NotificationsGateway,
     @InjectQueue('notification-queue') private readonly notificationQueue: Queue,
-    @Inject('REDIS_CLIENT') private readonly redisClient: Redis,
+    private readonly cacheService: RedisCacheService,
   ) {}
 
-  private getCacheKey(userId: string): string {
-    return `noti_${userId}_v`;
+  private getCacheKey(userId: string, page: number, limit: number): string {
+    return `noti:${userId}:page:${page}:limit:${limit}`;
   }
 
   private async invalidateUserCache(userId: string): Promise<void> {
-    await this.redisClient.del(this.getCacheKey(userId));
+    await this.cacheService.delByPattern(`noti:${userId}:page:*`);
   }
 
   async getUserNotifications(userId: string, query: GetNotificationsDto) {
-    const cacheKey = this.getCacheKey(userId);
-    const cachedStr = await this.redisClient.get(cacheKey);
-    
-    if (cachedStr) {
-      return JSON.parse(cachedStr);
-    }
-    const { page = 1, limit = 1 } = query;
-    const skip = (page - 1) * limit;
-    const [notification, total] = await Promise.all([
-      this.prisma.db.notification.findMany({
-        skip, take: limit,
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.db.inventory.count(),
-    ]);
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 5;
+    const cacheKey = this.getCacheKey(userId, page, limit);
+    const cachedNotifications = await this.cacheService.get<unknown[]>(cacheKey);
 
-    await this.redisClient.set(cacheKey, JSON.stringify(notification), 'PX', this.CACHE_TTL);
-    return notification;
+    if (cachedNotifications !== null) {
+      return cachedNotifications;
+    }
+
+    const skip = (page - 1) * limit;
+    const notifications = await this.prisma.db.notification.findMany({
+      where: { userId },
+      skip,
+      take: limit,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    });
+
+    await this.cacheService.set(cacheKey, notifications, this.CACHE_TTL);
+    return notifications;
   }
 
   async getUnreadCount(userId: string) {
@@ -59,7 +60,7 @@ export class NotificationsService {
       where: { id: notificationId, userId },
       data: { isRead: true },
     });
-    await this.invalidateUserCache(userId); 
+    await this.invalidateUserCache(userId);
     return { message: 'Đã đánh dấu đọc' };
   }
 
@@ -68,7 +69,7 @@ export class NotificationsService {
       where: { userId, isRead: false },
       data: { isRead: true },
     });
-    await this.invalidateUserCache(userId); 
+    await this.invalidateUserCache(userId);
     return { message: 'Đã đánh dấu đọc tất cả' };
   }
 
@@ -77,7 +78,7 @@ export class NotificationsService {
       data: { userId, content, isRead: false },
     });
 
-    const { unreadCount } = await this.getUnreadCount(userId); 
+    const { unreadCount } = await this.getUnreadCount(userId);
 
     this.gateway.sendToUser(userId, 'new_notification', {
       notification: newNoti,
@@ -86,7 +87,7 @@ export class NotificationsService {
 
     await this.invalidateUserCache(userId);
     this.logger.log(`Đã tạo và bắn realtime thông báo cho User: ${userId}`);
-    
+
     return newNoti;
   }
 
@@ -94,7 +95,7 @@ export class NotificationsService {
     await this.notificationQueue.add(
       'create-notification-job',
       { userId, content },
-      { attempts: 3, removeOnComplete: true }
+      { attempts: 3, removeOnComplete: true },
     );
   }
 }

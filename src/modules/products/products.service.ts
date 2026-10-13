@@ -79,10 +79,7 @@ export class ProductsService {
   }
 
   async updateProduct(id: string, updateProductDto: UpdateProductDto, adminId: string) {
-    const oldProduct = await this.prisma.db.product.findUnique({
-      where: { id },
-      include: { category: true, variants: true },
-    });
+    const oldProduct = await this.prisma.db.product.findUnique({ where: { id }, include: { category: true, variants: true } });
     if (!oldProduct) throw new NotFoundException('Không tìm thấy sản phẩm');
 
     const newProduct = await this.prisma.db.product.update({
@@ -152,10 +149,7 @@ export class ProductsService {
   }
 
   async remove(id: string, adminId: string) {
-    const oldProduct = await this.prisma.db.product.findUnique({
-      where: { id },
-      include: { category: true, variants: true },
-    });
+    const oldProduct = await this.prisma.db.product.findUnique({ where: { id }, include: { category: true, variants: true } });
     if (!oldProduct) throw new NotFoundException('Không tìm thấy sản phẩm');
     const deletedProduct = await this.prisma.db.$transaction(async (tx) => {
       await tx.productVariant.deleteMany({ where: { productId: id } });
@@ -173,6 +167,7 @@ export class ProductsService {
 
   async removeVariant(id: string, adminId: string) {
     const oldVariant = await this.findOneVariant(id);
+    if (!oldVariant) throw new NotFoundException(`Không tìm thấy biến thể với ID: ${id}`);
 
     const deletedVariant = await this.prisma.db.productVariant.delete({ where: { id } });
 
@@ -195,14 +190,13 @@ export class ProductsService {
     const { page = 1, limit = 1, sortBy = 'name', sortOrder = 'asc' } = query;
     const skip = (page - 1) * limit;
 
-    const [products, total] = await Promise.all([
-      this.prisma.db.product.findMany({
-        skip, take: limit,
-        include: { variants: true },
-        orderBy: { [sortBy]: sortOrder },
-      }),
-      this.prisma.db.product.count(),
-    ]);
+    const products = await this.prisma.db.product.findMany({
+      skip, take: limit,
+      include: { variants: true },
+      orderBy: { [sortBy]: sortOrder },
+    });
+
+    const total = await this.prisma.db.product.count();
 
     const result = {
       data: products,

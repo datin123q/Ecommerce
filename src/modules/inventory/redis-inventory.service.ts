@@ -1,13 +1,9 @@
-import { Injectable, OnModuleInit, BadRequestException } from '@nestjs/common';
-import { Redis } from 'ioredis';
+import { Injectable, OnModuleInit, BadRequestException, Inject } from '@nestjs/common';
+import Redis, { Cluster } from 'ioredis';
 
 @Injectable()
 export class RedisInventoryService implements OnModuleInit {
-  private readonly redis: Redis;
-
-  constructor() {
-    this.redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
-  }
+  constructor(@Inject('REDIS_CLIENT') private readonly redis: Redis | Cluster) {}
 
   async onModuleInit() {
     this.redis.defineCommand('deductStock', {
@@ -58,5 +54,20 @@ export class RedisInventoryService implements OnModuleInit {
     const exists = await this.redis.exists(key);
     
     return exists === 1;
+  }
+  async restoreStock(variantId: string, quantity: number): Promise<void> {
+    const key = `inventory:variant:${variantId}`;
+
+    await this.redis.eval(
+      `
+        if redis.call('EXISTS', KEYS[1]) == 1 then
+          return redis.call('INCRBY', KEYS[1], ARGV[1])
+        end
+        return 0
+      `,
+      1,
+      key,
+      quantity,
+    );
   }
 }
