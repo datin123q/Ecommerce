@@ -1,13 +1,9 @@
-import { Controller,Post, Get ,Patch, Param, Body, UseGuards, BadRequestException, UploadedFile, UseInterceptors} from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, UseGuards, BadRequestException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { UpdateProfileDto } from './dto/user-update.dto';
-import { UpdateRoleDto } from './dto/role-update.dto';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody, ApiConsumes, } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { v2 as cloudinary } from 'cloudinary';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ConfigService } from '@nestjs/config';
@@ -32,18 +28,6 @@ export class UsersController {
     @Body() updateProfileDto: UpdateProfileDto
   ) {
     return this.usersService.updateProfile(user.id, updateProfileDto);
-  }
-
-  @Patch(':id/role')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN) 
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Thay đổi quyền User (Chỉ ADMIN)' })
-  updateRole(
-    @Param('id') userId: string,
-    @Body() updateRoleDto: UpdateRoleDto
-  ) {
-    return this.usersService.updateRole(userId, updateRoleDto.role);
   }
 
   @Get('cloudinary-signature')

@@ -18,6 +18,93 @@ export class UsersService {
     });
   }
 
+  async getAdminUsers(query: {
+    page: number;
+    limit: number;
+    email?: string;
+    role?: Role;
+  }) {
+    const { page, limit } = query;
+    const where: Prisma.UserWhereInput = {
+      deletedAt: null,
+      ...(query.role ? { role: query.role } : {}),
+      ...(query.email?.trim()
+        ? {
+            email: {
+              contains: query.email.trim(),
+              mode: 'insensitive',
+            },
+          }
+        : {}),
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.masterClient.user.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          email: true,
+          fullName: true,
+          role: true,
+          avatar: true,
+          isVerified: true,
+          createdAt: true,
+          _count: { select: { orders: true } },
+        },
+      }),
+      this.prisma.masterClient.user.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
+    };
+  }
+
+  async getAdminUserById(userId: string) {
+    const user = await this.prisma.masterClient.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        avatar: true,
+        isVerified: true,
+        createdAt: true,
+        updatedAt: true,
+        deletedAt: true,
+        orders: {
+          orderBy: { createdAt: 'desc' },
+          take: 10,
+          select: {
+            id: true,
+            status: true,
+            totalAmount: true,
+            createdAt: true,
+            payment: { select: { status: true, method: true } },
+            _count: { select: { orderItems: true } },
+          },
+        },
+      },
+    });
+    if (!user) {
+      throw new NotFoundException(`Không tìm thấy tài khoản với ID: ${userId}`);
+    }
+    return user;
+  }
+
   async findByEmail(email: string) {
     return this.prisma.db.user.findUnique({ where: { email } });
   }
@@ -107,12 +194,36 @@ export class UsersService {
       data: { role },
     });
 
+    this.emitRoleUpdate(userId, role);
+    return updatedUser;
+  }
+
+  async updateAdminRole(userId: string, role: Role) {
+    await this.ensureUserExists(userId);
+
+    const updatedUser = await this.prisma.db.user.update({
+      where: { id: userId },
+      data: { role },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        role: true,
+        avatar: true,
+        updatedAt: true,
+      },
+    });
+
+    this.emitRoleUpdate(userId, role);
+
+    return updatedUser;
+  }
+
+  private emitRoleUpdate(userId: string, role: Role) {
     this.eventEmitter.emit('role.update', {
       userId,
       content: `Bạn vừa được đổi quyền thành ${role}`,
     });
-
-    return updatedUser;
   }
 
   private async ensureUserExists(userId: string): Promise<void> {

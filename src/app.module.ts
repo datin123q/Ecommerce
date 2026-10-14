@@ -15,7 +15,7 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-redis-yet';
-import { DashboardModule } from './modules/admin/dashboard/dashboard.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 import { BullModule } from '@nestjs/bullmq';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -102,7 +102,7 @@ import { PrometheusModule } from '@willsoto/nestjs-prometheus';
     }),
     PrometheusModule.register(),
     ScheduleModule.forRoot(),
-    EventEmitterModule.forRoot(),
+    EventEmitterModule.forRoot({ wildcard: true, delimiter: '.' }),
     AuthModule,
     UsersModule,
     CategoriesModule, 
@@ -118,7 +118,7 @@ import { PrometheusModule } from '@willsoto/nestjs-prometheus';
     TasksModule,
     ProcessorModule,
     DatabaseModule,
-    DashboardModule
+    AdminModule
   ],
   controllers: [],
   providers: [

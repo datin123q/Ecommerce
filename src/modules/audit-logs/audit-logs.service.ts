@@ -3,16 +3,17 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { AuditAction, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
-type AuditValues = Record<string, unknown>;
-
 interface AuditEventPayload {
   actorId?: string;
   userId?: string;
+  id?: string;
   action: AuditAction;
   entity: string;
   entityId: string;
-  oldValues?: AuditValues;
-  newValues?: AuditValues;
+  oldValues?: unknown;
+  newValues?: unknown;
+  oldValue?: unknown;
+  newValue?: unknown;
 }
 
 @Injectable()
@@ -26,8 +27,8 @@ export class AuditLogsService {
     action: AuditAction,
     entity: string,
     entityId: string,
-    oldValues?: AuditValues,
-    newValues?: AuditValues,
+    oldValues?: unknown,
+    newValues?: unknown,
     tx?: Prisma.TransactionClient,
   ) {
     const db = tx ?? this.prisma.db;
@@ -72,7 +73,7 @@ export class AuditLogsService {
   @OnEvent('inventory.*')
   async handleEvent(payload: AuditEventPayload) {
     try {
-      const userId = payload.actorId ?? payload.userId;
+      const userId = payload.actorId ?? payload.userId ?? payload.id;
 
       if (!userId) {
         this.logger.warn(
@@ -86,8 +87,8 @@ export class AuditLogsService {
         payload.action,
         payload.entity,
         payload.entityId,
-        payload.oldValues,
-        payload.newValues,
+        payload.oldValues ?? payload.oldValue,
+        payload.newValues ?? payload.newValue,
       );
     } catch (error: unknown) {
       const message =

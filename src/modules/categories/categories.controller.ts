@@ -1,37 +1,12 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
-import { CreateCategoryDto } from './dto/create-category.dto';
-import { UpdateCategoryDto } from './dto/update-category.dto';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { Role } from '@prisma/client'; 
-
-interface AuthenticatedUser {
-  id: string;
-  email: string;
-  role: Role;
-}
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 @ApiTags('Categories (Danh mục)')
 @Controller('categories')
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
-  //  TẠO DANH MỤC 
-  @Post()
-  @UseGuards(JwtAuthGuard, RolesGuard) 
-  @Roles(Role.ADMIN)                   
-  @ApiBearerAuth()                    
-  @ApiOperation({ summary: 'Tạo danh mục mới (Chỉ ADMIN)' })
-  create(@Body() createCategoryDto: CreateCategoryDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.categoriesService.create(createCategoryDto, user.id);
-  }
-
-  // XEM DANH MỤC 
   @Get()
   @ApiOperation({ summary: 'Lấy danh sách danh mục (Ai cũng xem được)' })
   findAll() {
@@ -44,23 +19,4 @@ export class CategoriesController {
     return this.categoriesService.findOne(id);
   }
 
-  // SỬA DANH MỤC 
-  @Patch(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Cập nhật danh mục (Chỉ ADMIN)' })
-  update(@Param('id') id: string, @Body() updateCategoryDto: UpdateCategoryDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.categoriesService.update(id, updateCategoryDto, user.id);
-  }
-
-  //  XÓA DANH MỤC
-  @Delete(':id')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Xóa danh mục (Chỉ ADMIN)' })
-  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.categoriesService.remove(id, user.id);
-  }
 }

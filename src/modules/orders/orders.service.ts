@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { GetAllOrdersDto } from './dto/all-orders.dto';
 import { OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
@@ -65,6 +66,29 @@ export class OrdersService {
     ]);
 
     return { totalOrders, ordersByStatus, orderValue };
+  }
+
+  getDashboardDateRange(fromValue?: string, toValue?: string) {
+    const to = toValue ? new Date(toValue) : new Date();
+    const from = fromValue
+      ? new Date(fromValue)
+      : new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    if (
+      Number.isNaN(from.getTime()) ||
+      Number.isNaN(to.getTime()) ||
+      from >= to
+    ) {
+      throw new BadRequestException(
+        '`from` phải nhỏ hơn `to` và cả hai phải là ngày hợp lệ.',
+      );
+    }
+
+    if (to.getTime() - from.getTime() > 366 * 24 * 60 * 60 * 1000) {
+      throw new BadRequestException('Khoảng thời gian tối đa là 366 ngày.');
+    }
+
+    return { from, to };
   }
 
   async getDashboardTopProducts(from: Date, to: Date, limit: number) {
@@ -207,14 +231,48 @@ export class OrdersService {
   }
 
   async updateOrderStatus(orderId: string, newStatus: OrderStatus) {
-    const order = await this.prisma.db.order.findUnique({ where: { id: orderId } });
+    const order = await this.prisma.db.order.findUnique({
+      where: { id: orderId },
+      include: { orderItems: true },
+    });
     if (!order) throw new NotFoundException('Đơn hàng không tồn tại');
 
     StateTransition.validateTransition(order.status, newStatus);
 
-    const updatedOrder = await this.prisma.db.order.update({
-      where: { id: orderId },
+    if (newStatus === OrderStatus.PAID) {
+      const payment = await this.prisma.db.payment.findUnique({
+        where: { orderId },
+        select: { status: true },
+      });
+      if (payment?.status !== PaymentStatus.SUCCESS) {
+        throw new BadRequestException(
+          'Chỉ có thể chuyển đơn sang PAID khi thanh toán đã SUCCESS.',
+        );
+      }
+    }
+
+    if (newStatus === OrderStatus.CANCELLED) {
+      const cancelledOrder = await this.executeCancelTransaction(
+        order.userId,
+        order,
+      );
+      this.postOrderCancellation({
+        id: cancelledOrder.id,
+        userId: cancelledOrder.userId,
+      });
+      return cancelledOrder;
+    }
+
+    const updated = await this.prisma.db.order.updateMany({
+      where: { id: orderId, status: order.status },
       data: { status: newStatus }
+    });
+    if (updated.count === 0) {
+      throw new BadRequestException('Trạng thái đơn hàng vừa được thay đổi.');
+    }
+
+    const updatedOrder = await this.prisma.db.order.findUniqueOrThrow({
+      where: { id: orderId },
     });
 
     this.eventEmitter.emit('order.statusUpdated', {
@@ -230,13 +288,6 @@ export class OrdersService {
       where: { userId },
       include: { orderItems: true }, 
       orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  getOneOrder(orderId: string, userId: string) {
-    return this.prisma.db.order.findUnique({
-      where: { id: orderId, userId: userId },
-      include: { orderItems: true }
     });
   }
 
@@ -321,6 +372,14 @@ export class OrdersService {
     order: Prisma.OrderGetPayload<{ include: { orderItems: true } }>
   ) {
     return this.prisma.db.$transaction(async (tx) => {
+      const cancellation = await tx.order.updateMany({
+        where: { id: order.id, status: OrderStatus.PENDING },
+        data: { status: OrderStatus.CANCELLED },
+      });
+      if (cancellation.count === 0) {
+        throw new BadRequestException('Trạng thái đơn hàng vừa được thay đổi.');
+      }
+
       const validItems = order.orderItems
       .filter(item => item.inventoryId !== null)
       .map(item => ({
@@ -340,10 +399,9 @@ export class OrdersService {
       // 2. Gọi service hoàn voucher (nếu có)
       await this.voucherService.restoreVoucher(tx, order.id, userId);
 
-      // 3. Cập nhật trạng thái đơn hàng
-      return tx.order.update({
+      return tx.order.findUniqueOrThrow({
         where: { id: order.id },
-        data: { status: OrderStatus.CANCELLED },
+        include: { orderItems: true },
       });
     });
   }
@@ -395,5 +453,79 @@ export class OrdersService {
       throw new BadRequestException('Tồn kho không đủ để mở Flash Sale');
     }
     await this.cacheService.setNumber(key, quantity, 60 * 60 * 1000);
+  }
+
+  public async getAllOrders(query: GetAllOrdersDto){
+    const { page = 1, limit = 10 } = query;
+    const skip = (page - 1) * limit;
+    const from = query.from ? new Date(query.from) : undefined;
+    const to = query.to ? new Date(query.to) : undefined;
+
+    if (from && to && from >= to) {
+      throw new BadRequestException('`from` phải nhỏ hơn `to`.');
+    }
+
+    const where: Prisma.OrderWhereInput = {
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.email?.trim()
+        ? {
+            user: {
+              is: {
+                email: { contains: query.email.trim(), mode: 'insensitive' },
+              },
+            },
+          }
+        : {}),
+      ...(from || to
+        ? { createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) } }
+        : {}),
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.masterClient.order.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          status: true,
+          totalAmount: true,
+          createdAt: true,
+          updatedAt: true,
+          user: { select: { id: true, email: true, fullName: true } },
+          payment: { select: { status: true, method: true } },
+          _count: { select: { orderItems: true } },
+        },
+      }),
+      this.prisma.masterClient.order.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPreviousPage: page > 1,
+      },
+    };
+  }
+
+  async getOneOrder(orderId: string) {
+    const order = await this.prisma.masterClient.order.findUnique({
+      where: { id: orderId },
+      include: {
+        user: { select: { id: true, email: true, fullName: true } },
+        payment: true,
+        orderItems: true,
+        voucherUsages: { include: { voucher: true } },
+      },
+    });
+    if (!order) throw new NotFoundException('Đơn hàng không tồn tại');
+    return order;
   }
 }

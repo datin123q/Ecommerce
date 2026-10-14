@@ -51,7 +51,7 @@ export class CategoriesService {
 
       this.eventEmitter.emit('category.created', {
         id: adminId, action: 'CREATE', entity: 'Category', entityId: newCategory.id,
-        oldValue: null, newValue: newCategory, tx: this.prisma
+        oldValue: null, newValue: newCategory,
       });
 
       await this.clearCategoryCaches();
@@ -105,7 +105,7 @@ export class CategoriesService {
 
       this.eventEmitter.emit('category.update', {
         id: adminId, action: 'UPDATE', entity: 'Category', entityId: id,
-        oldValue: oldCategory, newValue: newCategory, tx: this.prisma
+        oldValue: oldCategory, newValue: newCategory,
       });
 
       await this.clearCategoryCaches(id);
@@ -146,7 +146,7 @@ export class CategoriesService {
 
     this.eventEmitter.emit('category.delete', {
       id: adminId, action: 'DELETE', entity: 'Category', entityId: id,
-      oldValue: oldCategory, newValue: null, tx: this.prisma
+      oldValue: oldCategory, newValue: null,
     });
 
     await this.clearCategoryCaches(id, true);
