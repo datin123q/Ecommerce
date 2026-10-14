@@ -9,7 +9,7 @@ import { RedisCacheService } from '../../redis/redisCache.service';
 const JOB_CONSTANTS = {
     CANCEL_ORDERS: {
         NAME: 'AUTO_CANCEL_ORDERS',
-        LOCK_KEY: 'cron_lock:cancel_orders',
+        LOCK_KEY: '{cron_lock:cancel_orders}',
         TTL_SEC: 180,
         EXPIRE_HOURS: 24,
         CHUNK_SIZE: 100,

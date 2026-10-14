@@ -20,12 +20,12 @@ export type VariantWithProduct = Prisma.ProductVariantGetPayload<{
 export class ProductsService {
   constructor(
     private readonly prisma: PrismaService, 
-    private readonly eventEmitter: EventEmitter2, 
+    private readonly eventEmitter: EventEmitter2,
     private readonly cacheService: RedisCacheService 
   ) {}
 
   getDashboardActiveProductCount() {
-    return this.prisma.masterClient.product.count({
+    return this.prisma.db.product.count({
       where: { deletedAt: null },
     });
   }

@@ -59,38 +59,41 @@ export class InventoryService {
   }
 
   async getDashboardLowStock(threshold: number, limit: number) {
-    const rows = await this.prisma.masterClient.$queryRaw<{
-      variantId: string;
-      productId: string;
-      productName: string;
-      variantName: string;
-      variant: string;
-      sku: string;
-      availableQuantity: bigint;
-    }[]>(Prisma.sql`
-      SELECT
-        pv."id" AS "variantId",
-        p."id" AS "productId",
-        p."name" AS "productName",
-        pv."name" AS "variantName",
-        pv."variant" AS "variant",
-        pv."sku" AS "sku",
-        COALESCE(SUM(i."quantity"), 0)::bigint AS "availableQuantity"
-      FROM "Product_Variants" pv
-      INNER JOIN "Products" p ON p."id" = pv."productId"
-      LEFT JOIN "Inventories" i ON i."variantId" = pv."id"
-      WHERE pv."deletedAt" IS NULL
-        AND p."deletedAt" IS NULL
-      GROUP BY pv."id", p."id", p."name", pv."name", pv."variant", pv."sku"
-      HAVING COALESCE(SUM(i."quantity"), 0) <= ${threshold}
-      ORDER BY SUM(i."quantity") ASC NULLS FIRST
-      LIMIT ${limit}
-    `);
+    const variants = await this.prisma.db.productVariant.findMany({
+      where: {
+        deletedAt: null,
+        product: { is: { deletedAt: null } },
+      },
+      select: {
+        id: true,
+        name: true,
+        variant: true,
+        sku: true,
+        product: { select: { id: true, name: true } },
+      },
+    });
+    const inventoryTotals = await this.prisma.db.inventory.groupBy({
+      by: ['variantId'],
+      where: { variantId: { in: variants.map((variant) => variant.id) } },
+      _sum: { quantity: true },
+    });
+    const quantityByVariant = new Map(
+      inventoryTotals.map((row) => [row.variantId, row._sum.quantity ?? 0]),
+    );
 
-    return rows.map((row) => ({
-      ...row,
-      availableQuantity: Number(row.availableQuantity),
-    }));
+    return variants
+      .map((variant) => ({
+        variantId: variant.id,
+        productId: variant.product.id,
+        productName: variant.product.name,
+        variantName: variant.name,
+        variant: variant.variant,
+        sku: variant.sku,
+        availableQuantity: quantityByVariant.get(variant.id) ?? 0,
+      }))
+      .filter((row) => row.availableQuantity <= threshold)
+      .sort((a, b) => a.availableQuantity - b.availableQuantity)
+      .slice(0, limit);
   }
 
   async update(id: string, updateWarehouseDto: UpdateWarehouseDto, adminId: string) {

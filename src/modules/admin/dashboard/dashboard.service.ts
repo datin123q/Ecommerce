@@ -38,10 +38,6 @@ export class DashboardService {
       );
     }
 
-    if (to.getTime() - from.getTime() > 366 * 24 * 60 * 60 * 1000) {
-      throw new BadRequestException('Khoảng thời gian tối đa là 366 ngày.');
-    }
-
     return { from, to };
   }
 

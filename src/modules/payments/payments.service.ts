@@ -47,15 +47,15 @@ export class PaymentsService {
   async getDashboardSummary(from: Date, to: Date) {
     const createdAt = { gte: from, lt: to };
     const [paidRevenue, codPending] = await Promise.all([
-      this.prisma.masterClient.order.aggregate({
+      this.prisma.db.order.aggregate({
         where: {
           createdAt,
-          status: { not: OrderStatus.CANCELLED },
+          status: OrderStatus.PAID,
           payment: { is: { status: PaymentStatus.SUCCESS } },
         },
         _sum: { totalAmount: true },
       }),
-      this.prisma.masterClient.payment.aggregate({
+      this.prisma.db.payment.aggregate({
         where: {
           method: PaymentMethod.COD,
           status: PaymentStatus.PENDING,
@@ -79,30 +79,40 @@ export class PaymentsService {
   }
 
   async getDashboardRevenue(from: Date, to: Date, interval: 'day' | 'week' | 'month') {
-    const rows = await this.prisma.masterClient.$queryRaw<{
-      period: Date;
-      revenue: bigint;
-      orders: bigint;
-    }[]>(Prisma.sql`
-      SELECT
-        date_trunc(${interval}, o."createdAt") AS period,
-        COALESCE(SUM(o."totalAmount"), 0)::bigint AS revenue,
-        COUNT(*)::bigint AS orders
-      FROM "Orders" o
-      INNER JOIN "Payments" p ON p."orderId" = o."id"
-      WHERE p."status"::text = ${PaymentStatus.SUCCESS}
-        AND o."status"::text <> ${OrderStatus.CANCELLED}
-        AND o."createdAt" >= ${from}
-        AND o."createdAt" < ${to}
-      GROUP BY 1
-      ORDER BY 1
-    `);
+    const paidOrders = await this.prisma.db.order.findMany({
+      where: {
+        status: OrderStatus.PAID,
+        createdAt: { gte: from, lt: to },
+        payment: { is: { status: PaymentStatus.SUCCESS } },
+      },
+      select: { createdAt: true, totalAmount: true },
+    });
 
-    return rows.map((row) => ({
-      period: row.period,
-      revenue: Number(row.revenue),
-      orders: Number(row.orders),
-    }));
+    const buckets = new Map<number, { period: Date; revenue: number; orders: number }>();
+    for (const order of paidOrders) {
+      const period = this.getDashboardPeriod(order.createdAt, interval);
+      const key = period.getTime();
+      const bucket = buckets.get(key) ?? { period, revenue: 0, orders: 0 };
+      bucket.revenue += order.totalAmount;
+      bucket.orders += 1;
+      buckets.set(key, bucket);
+    }
+
+    return [...buckets.values()].sort(
+      (a, b) => a.period.getTime() - b.period.getTime(),
+    );
+  }
+
+  private getDashboardPeriod(date: Date, interval: 'day' | 'week' | 'month') {
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth();
+    const day = date.getUTCDate();
+    if (interval === 'month') return new Date(Date.UTC(year, month, 1));
+    if (interval === 'week') {
+      const mondayOffset = (date.getUTCDay() + 6) % 7;
+      return new Date(Date.UTC(year, month, day - mondayOffset));
+    }
+    return new Date(Date.UTC(year, month, day));
   }
 
   async createPaymentIntent(

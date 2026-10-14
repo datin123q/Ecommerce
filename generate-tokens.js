@@ -8,7 +8,6 @@ const prisma = new PrismaClient();
 JWT_ACCESS_SECRET='super_secret_access_key_123456';
 
 async function main() {
-  // Lấy ra 500 user đầu tiên để test
   const users = await prisma.user.findMany({
     take: 2000,
     select: { id: true, email: true, role: true }

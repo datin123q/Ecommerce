@@ -21,6 +21,8 @@ type ReplicaReadDelegate = {
   findFirst(args: unknown): Promise<unknown>;
   findUnique(args: unknown): Promise<unknown>;
   count(args: unknown): Promise<unknown>;
+  aggregate(args: unknown): Promise<unknown>;
+  groupBy(args: unknown): Promise<unknown>;
 };
 
 type SoftDeleteClient = Omit<PrismaClient, '$on'>;
@@ -146,6 +148,26 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
               model as keyof PrismaClient
             ] as unknown as ReplicaReadDelegate;
             return delegate.count(args);
+          },
+          async aggregate({ model, args }) {
+            if (isSoftDeleteModel(model)) {
+              applySoftDeleteFilters(model, args);
+            }
+            const replica = getNextReplica();
+            const delegate = replica[
+              model as keyof PrismaClient
+            ] as unknown as ReplicaReadDelegate;
+            return delegate.aggregate(args);
+          },
+          async groupBy({ model, args }) {
+            if (isSoftDeleteModel(model)) {
+              applySoftDeleteFilters(model, args);
+            }
+            const replica = getNextReplica();
+            const delegate = replica[
+              model as keyof PrismaClient
+            ] as unknown as ReplicaReadDelegate;
+            return delegate.groupBy(args);
           },
         },
       },

@@ -52,13 +52,13 @@ export class OrdersService {
   async getDashboardSummary(from: Date, to: Date) {
     const createdAt = { gte: from, lt: to };
     const [totalOrders, ordersByStatus, orderValue] = await Promise.all([
-      this.prisma.masterClient.order.count({ where: { createdAt } }),
-      this.prisma.masterClient.order.groupBy({
+      this.prisma.db.order.count({ where: { createdAt } }),
+      this.prisma.db.order.groupBy({
         by: ['status'],
         where: { createdAt },
         _count: { _all: true },
       }),
-      this.prisma.masterClient.order.aggregate({
+      this.prisma.db.order.aggregate({
         where: { createdAt, status: { not: OrderStatus.CANCELLED } },
         _sum: { totalAmount: true },
         _count: { _all: true },
@@ -92,32 +92,47 @@ export class OrdersService {
   }
 
   async getDashboardTopProducts(from: Date, to: Date, limit: number) {
-    return this.prisma.masterClient.$queryRaw<{
+    const groupedItems = await this.prisma.db.orderItem.groupBy({
+      by: ['productName', 'sku', 'price'],
+      where: {
+        order: {
+          is: {
+            status: OrderStatus.PAID,
+            createdAt: { gte: from, lt: to },
+            payment: { is: { status: PaymentStatus.SUCCESS } },
+          },
+        },
+      },
+      _sum: { quantity: true },
+    });
+
+    const totals = new Map<string, {
       productName: string;
       sku: string;
-      unitsSold: bigint;
-      revenue: bigint;
-    }[]>(Prisma.sql`
-      SELECT
-        oi."productName" AS "productName",
-        oi."sku" AS "sku",
-        SUM(oi."quantity")::bigint AS "unitsSold",
-        SUM(oi."quantity"::bigint * oi."price")::bigint AS "revenue"
-      FROM "OrderItems" oi
-      INNER JOIN "Orders" o ON o."id" = oi."orderId"
-      INNER JOIN "Payments" p ON p."orderId" = o."id"
-      WHERE p."status"::text = ${PaymentStatus.SUCCESS}
-        AND o."status"::text <> ${OrderStatus.CANCELLED}
-        AND o."createdAt" >= ${from}
-        AND o."createdAt" < ${to}
-      GROUP BY oi."productName", oi."sku"
-      ORDER BY SUM(oi."quantity") DESC
-      LIMIT ${limit}
-    `);
+      unitsSold: number;
+      revenue: number;
+    }>();
+    for (const item of groupedItems) {
+      const key = JSON.stringify([item.productName, item.sku]);
+      const unitsSold = item._sum.quantity ?? 0;
+      const total = totals.get(key) ?? {
+        productName: item.productName,
+        sku: item.sku,
+        unitsSold: 0,
+        revenue: 0,
+      };
+      total.unitsSold += unitsSold;
+      total.revenue += unitsSold * item.price;
+      totals.set(key, total);
+    }
+
+    return [...totals.values()]
+      .sort((a, b) => b.unitsSold - a.unitsSold)
+      .slice(0, limit);
   }
 
   getDashboardRecentOrders(limit: number) {
-    return this.prisma.masterClient.order.findMany({
+    return this.prisma.db.order.findMany({
       take: limit,
       orderBy: { createdAt: 'desc' },
       select: {
@@ -289,6 +304,25 @@ export class OrdersService {
       include: { orderItems: true }, 
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async getMyOrderById(userId: string, orderId: string) {
+    const order = await this.prisma.db.order.findFirst({
+      where: { id: orderId, userId },
+      include: {
+        orderItems: true,
+        payment: true,
+      },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Không tìm thấy đơn hàng.');
+    }
+
+    return {
+      ...order,
+      paymentStatus: order.payment?.status,
+    };
   }
 
   public buildOrderItemsSnapshot(

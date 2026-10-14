@@ -87,6 +87,12 @@ function numberFor(key: string, maximum: number): number {
   const digest = createHash('sha256').update(key).digest();
   return digest.readUInt32BE(0) % maximum;
 }
+function dateFor(key: string, daysBack = 365): Date {
+  const msInDay = 24 * 60 * 60 * 1000;
+  const randomDays = numberFor(`${key}:days`, daysBack);
+  const randomTime = numberFor(`${key}:time`, msInDay);
+  return new Date(Date.now() - (randomDays * msInDay) - randomTime);
+}
 
 async function insertInBatches<T>(
   rows: T[],
@@ -244,12 +250,18 @@ async function main(): Promise<void> {
       OrderStatus.DELIVERED,
       OrderStatus.CANCELLED,
     ];
-    const orderRows = Array.from({ length: config.orders }, (_, index) => ({
-      id: stableId(config.batch, 'order', String(index)),
-      userId: userRows[index % userRows.length].id,
-      status: orderStatuses[index % orderStatuses.length],
-      totalAmount: 0,
-    }));
+    const orderRows = Array.from({ length: config.orders }, (_, index) => {
+      const createdAt = dateFor(`${config.batch}:order-date:${index}`, 365);
+      
+      return {
+        id: stableId(config.batch, 'order', String(index)),
+        userId: userRows[index % userRows.length].id,
+        status: orderStatuses[index % orderStatuses.length],
+        totalAmount: 0,
+        createdAt, 
+        updatedAt: createdAt, 
+      };
+    });
     const orderItemRows: Array<{
       id: string;
       orderId: string;
@@ -291,12 +303,12 @@ async function main(): Promise<void> {
           inventoryId:
             inventoryRows[warehouseIndex * variantRows.length + variantIndex]
               .id,
-          quantity,
-          price,
-          productName: `${product.name} - ${variant.name}`,
-          sku: variant.sku,
-        });
-      }
+              quantity,
+              price,
+              productName: `${product.name} - ${variant.name}`,
+              sku: variant.sku,
+            });
+          }
       order.totalAmount = totalAmount;
     }
 

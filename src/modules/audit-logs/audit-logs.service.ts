@@ -54,14 +54,6 @@ export class AuditLogsService {
       orderBy: {
         createdAt: 'desc',
       },
-      include: {
-        user: {
-          select: {
-            email: true,
-            role: true,
-          },
-        },
-      },
     });
   }
 

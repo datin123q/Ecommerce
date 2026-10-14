@@ -13,7 +13,7 @@ export class UsersService {
   ) {}
 
   getDashboardNewCustomerCount(from: Date, to: Date) {
-    return this.prisma.masterClient.user.count({
+    return this.prisma.db.user.count({
       where: { createdAt: { gte: from, lt: to } },
     });
   }
@@ -22,12 +22,9 @@ export class UsersService {
     page: number;
     limit: number;
     email?: string;
-    role?: Role;
   }) {
     const { page, limit } = query;
     const where: Prisma.UserWhereInput = {
-      deletedAt: null,
-      ...(query.role ? { role: query.role } : {}),
       ...(query.email?.trim()
         ? {
             email: {
