@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
-import { OrderStatus, Prisma } from '@prisma/client';
+import { OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { StateTransition } from './domain/state-transition';
@@ -47,6 +47,66 @@ export class OrdersService {
     private readonly redisInventoryService: RedisInventoryService,
     @InjectQueue('order-queue') private readonly orderQueue: Queue,
   ) {}
+
+  async getDashboardSummary(from: Date, to: Date) {
+    const createdAt = { gte: from, lt: to };
+    const [totalOrders, ordersByStatus, orderValue] = await Promise.all([
+      this.prisma.masterClient.order.count({ where: { createdAt } }),
+      this.prisma.masterClient.order.groupBy({
+        by: ['status'],
+        where: { createdAt },
+        _count: { _all: true },
+      }),
+      this.prisma.masterClient.order.aggregate({
+        where: { createdAt, status: { not: OrderStatus.CANCELLED } },
+        _sum: { totalAmount: true },
+        _count: { _all: true },
+      }),
+    ]);
+
+    return { totalOrders, ordersByStatus, orderValue };
+  }
+
+  async getDashboardTopProducts(from: Date, to: Date, limit: number) {
+    return this.prisma.masterClient.$queryRaw<{
+      productName: string;
+      sku: string;
+      unitsSold: bigint;
+      revenue: bigint;
+    }[]>(Prisma.sql`
+      SELECT
+        oi."productName" AS "productName",
+        oi."sku" AS "sku",
+        SUM(oi."quantity")::bigint AS "unitsSold",
+        SUM(oi."quantity"::bigint * oi."price")::bigint AS "revenue"
+      FROM "OrderItems" oi
+      INNER JOIN "Orders" o ON o."id" = oi."orderId"
+      INNER JOIN "Payments" p ON p."orderId" = o."id"
+      WHERE p."status"::text = ${PaymentStatus.SUCCESS}
+        AND o."status"::text <> ${OrderStatus.CANCELLED}
+        AND o."createdAt" >= ${from}
+        AND o."createdAt" < ${to}
+      GROUP BY oi."productName", oi."sku"
+      ORDER BY SUM(oi."quantity") DESC
+      LIMIT ${limit}
+    `);
+  }
+
+  getDashboardRecentOrders(limit: number) {
+    return this.prisma.masterClient.order.findMany({
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        status: true,
+        totalAmount: true,
+        createdAt: true,
+        user: { select: { id: true, email: true, fullName: true } },
+        payment: { select: { status: true, method: true } },
+        _count: { select: { orderItems: true } },
+      },
+    });
+  }
 
   //  PUBLIC METHODS
   async createOrder(userId: string, dto: CreateOrderDto) {

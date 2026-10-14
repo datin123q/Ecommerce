@@ -31,7 +31,7 @@ import { MarketingStrategy } from './strategy/marketing.strategy';
             user: configService.get<string>('MAIL_USER') || '',
             pass: configService.get<string>('MAIL_PASS') || '',
           },
-          pool: true, maxConnections: 10, maxMessages: 50,
+          pool: true, maxConnections: 1, maxMessages: 500,
         },
         defaults: {
           from: configService.get<string>('MAIL_FROM') || 'noreply@domain.com',

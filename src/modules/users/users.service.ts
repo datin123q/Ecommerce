@@ -12,6 +12,12 @@ export class UsersService {
     private readonly eventEmitter: EventEmitter2
   ) {}
 
+  getDashboardNewCustomerCount(from: Date, to: Date) {
+    return this.prisma.masterClient.user.count({
+      where: { createdAt: { gte: from, lt: to } },
+    });
+  }
+
   async findByEmail(email: string) {
     return this.prisma.db.user.findUnique({ where: { email } });
   }

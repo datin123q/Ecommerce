@@ -2,11 +2,16 @@ import { Controller, Post, UseGuards } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guards/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { Role } from '@prisma/client';
 
 
 @ApiTags('Tasks')
 @Controller('tasks')
 @UseGuards(JwtAuthGuard) 
+@UseGuards(RolesGuard)
+@Roles(Role.ADMIN)
 @ApiBearerAuth()
 export class TasksController {
   constructor(private readonly tasksService: TasksService) {}

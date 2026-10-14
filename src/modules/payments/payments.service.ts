@@ -17,8 +17,8 @@ import {
   OrderStatus,
   Order,
   Payment,
+  Prisma,
 } from '@prisma/client';
-import type { Prisma } from '@prisma/client';
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
@@ -43,6 +43,67 @@ export class PaymentsService {
     @Inject(PAYMENT_PROVIDER)
     private readonly paymentProvider: IPaymentProvider,
   ) {}
+
+  async getDashboardSummary(from: Date, to: Date) {
+    const createdAt = { gte: from, lt: to };
+    const [paidRevenue, codPending] = await Promise.all([
+      this.prisma.masterClient.order.aggregate({
+        where: {
+          createdAt,
+          status: { not: OrderStatus.CANCELLED },
+          payment: { is: { status: PaymentStatus.SUCCESS } },
+        },
+        _sum: { totalAmount: true },
+      }),
+      this.prisma.masterClient.payment.aggregate({
+        where: {
+          method: PaymentMethod.COD,
+          status: PaymentStatus.PENDING,
+          order: {
+            is: {
+              createdAt,
+              status: {
+                in: [OrderStatus.AWAITING_DELIVERY, OrderStatus.DELIVERED],
+              },
+            },
+          },
+        },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    return {
+      paidRevenue: paidRevenue._sum.totalAmount ?? 0,
+      codPendingAmount: codPending._sum.amount ?? 0,
+    };
+  }
+
+  async getDashboardRevenue(from: Date, to: Date, interval: 'day' | 'week' | 'month') {
+    const rows = await this.prisma.masterClient.$queryRaw<{
+      period: Date;
+      revenue: bigint;
+      orders: bigint;
+    }[]>(Prisma.sql`
+      SELECT
+        date_trunc(${interval}, o."createdAt") AS period,
+        COALESCE(SUM(o."totalAmount"), 0)::bigint AS revenue,
+        COUNT(*)::bigint AS orders
+      FROM "Orders" o
+      INNER JOIN "Payments" p ON p."orderId" = o."id"
+      WHERE p."status"::text = ${PaymentStatus.SUCCESS}
+        AND o."status"::text <> ${OrderStatus.CANCELLED}
+        AND o."createdAt" >= ${from}
+        AND o."createdAt" < ${to}
+      GROUP BY 1
+      ORDER BY 1
+    `);
+
+    return rows.map((row) => ({
+      period: row.period,
+      revenue: Number(row.revenue),
+      orders: Number(row.orders),
+    }));
+  }
 
   async createPaymentIntent(
     userId: string,

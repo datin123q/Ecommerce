@@ -68,7 +68,6 @@ export class TasksService {
         });
     }
 
-    // CORE LOGIC & HELPER METHODS (PRIVATE)
     private async executeWithLock(jobName: string, lockKey: string, ttlSeconds: number, jobLogic: () => Promise<number>) {
         const acquired = await this.cacheService.setNX(lockKey, 'locked', ttlSeconds);
         if (!acquired) {

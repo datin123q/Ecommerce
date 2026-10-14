@@ -16,11 +16,9 @@ export type CartWithItems = Prisma.CartGetPayload<{
 }>;
 
 export const checkoutCartSelect = {
-  // Select trực tiếp các trường của Cart
   id: true,
   userId: true,
   
-  // Dùng thuần SELECT thay vì INCLUDE cho bảng liên kết
   cartItems: {
     select: {
       variantId: true,

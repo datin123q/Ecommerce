@@ -36,6 +36,25 @@ services:
     volumes:
       - postgres_replica_data:/bitnami/postgresql
 
+  postgres_replica_2:
+    image: bitnami/postgresql:latest
+    container_name: commerce_core_postgres_replica_2
+    restart: always
+    depends_on:
+      - postgres_master
+    environment:
+      POSTGRESQL_REPLICATION_MODE: slave
+      POSTGRESQL_MASTER_HOST: postgres_master
+      POSTGRESQL_MASTER_PORT_NUMBER: 5432
+      POSTGRESQL_REPLICATION_USER: replicator
+      POSTGRESQL_REPLICATION_PASSWORD: replpassword
+      POSTGRESQL_PASSWORD: rootpassword
+      POSTGRESQL_MAX_CONNECTIONS: 200
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_replica_2_data:/bitnami/postgresql
+
   redis:
     image: redis:7-alpine
     container_name: commerce_core_redis
@@ -149,6 +168,7 @@ services:
     depends_on:
       - postgres_master
       - postgres_replica
+      - postgres_replica_2
       - redis
 
   prometheus:
@@ -198,6 +218,7 @@ networks:
 volumes:
   postgres_master_data:
   postgres_replica_data:
+  postgres_replica_2_data:
   redis_data:
   prometheus_data:
   grafana_data:

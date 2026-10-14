@@ -15,6 +15,8 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-redis-yet';
+import { DashboardModule } from './modules/admin/dashboard/dashboard.module';
+
 import { BullModule } from '@nestjs/bullmq';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import Redis from 'ioredis';
@@ -116,6 +118,7 @@ import { PrometheusModule } from '@willsoto/nestjs-prometheus';
     TasksModule,
     ProcessorModule,
     DatabaseModule,
+    DashboardModule
   ],
   controllers: [],
   providers: [

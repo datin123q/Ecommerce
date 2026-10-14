@@ -58,6 +58,41 @@ export class InventoryService {
     return JSON.stringify(result);
   }
 
+  async getDashboardLowStock(threshold: number, limit: number) {
+    const rows = await this.prisma.masterClient.$queryRaw<{
+      variantId: string;
+      productId: string;
+      productName: string;
+      variantName: string;
+      variant: string;
+      sku: string;
+      availableQuantity: bigint;
+    }[]>(Prisma.sql`
+      SELECT
+        pv."id" AS "variantId",
+        p."id" AS "productId",
+        p."name" AS "productName",
+        pv."name" AS "variantName",
+        pv."variant" AS "variant",
+        pv."sku" AS "sku",
+        COALESCE(SUM(i."quantity"), 0)::bigint AS "availableQuantity"
+      FROM "Product_Variants" pv
+      INNER JOIN "Products" p ON p."id" = pv."productId"
+      LEFT JOIN "Inventories" i ON i."variantId" = pv."id"
+      WHERE pv."deletedAt" IS NULL
+        AND p."deletedAt" IS NULL
+      GROUP BY pv."id", p."id", p."name", pv."name", pv."variant", pv."sku"
+      HAVING COALESCE(SUM(i."quantity"), 0) <= ${threshold}
+      ORDER BY SUM(i."quantity") ASC NULLS FIRST
+      LIMIT ${limit}
+    `);
+
+    return rows.map((row) => ({
+      ...row,
+      availableQuantity: Number(row.availableQuantity),
+    }));
+  }
+
   async update(id: string, updateWarehouseDto: UpdateWarehouseDto, adminId: string) {
     const oldWarehouse = await this.prisma.db.warehouse.findUnique({ where: { id } }); 
     if (!oldWarehouse) throw new NotFoundException('Không tìm thấy kho');

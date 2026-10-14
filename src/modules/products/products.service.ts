@@ -24,6 +24,12 @@ export class ProductsService {
     private readonly cacheService: RedisCacheService 
   ) {}
 
+  getDashboardActiveProductCount() {
+    return this.prisma.masterClient.product.count({
+      where: { deletedAt: null },
+    });
+  }
+
   // CACHE KEY MANAGEMENT 
   private getProductCacheKey(id: string) { return `product_${id}_v`; }
   private getVariantCacheKey(id: string) { return `variant_${id}_v`; }

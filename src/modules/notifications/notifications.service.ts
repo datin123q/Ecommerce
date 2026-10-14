@@ -86,7 +86,7 @@ export class NotificationsService {
     });
 
     await this.invalidateUserCache(userId);
-    this.logger.log(`Đã tạo và bắn realtime thông báo cho User: ${userId}`);
+    this.logger.log(`Đã tạo và bắn realtime thông báo cho User: ${userId}: ${unreadCount}`);
 
     return newNoti;
   }

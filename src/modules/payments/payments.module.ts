@@ -14,5 +14,6 @@ import { StripeAdapter } from './adapters/stripe.adapter';
       useClass: StripeAdapter, 
     }
   ],
+  exports: [PaymentsService],
 })
 export class PaymentsModule {}
