@@ -174,6 +174,7 @@ export class TasksService {
             },
             opts: {
                 removeOnComplete: true,
+                removeOnFail: false,
                 attempts: 3,
                 backoff: {
                     type: 'exponential',

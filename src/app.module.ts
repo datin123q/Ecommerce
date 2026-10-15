@@ -31,6 +31,9 @@ import { envValidationSchema } from './config/env.validation';
 import { ProcessorModule } from './processor/processor.module';
 import { SendMailOptions } from 'nodemailer';
 import { PrometheusModule } from '@willsoto/nestjs-prometheus';
+import { BullBoardModule } from '@bull-board/nestjs';
+import { ExpressAdapter } from '@bull-board/express';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -100,6 +103,10 @@ import { PrometheusModule } from '@willsoto/nestjs-prometheus';
         } as SendMailOptions,
       }),
     }),
+    BullBoardModule.forRoot({
+      route: '/admin/queues', 
+      adapter: ExpressAdapter,
+    }),
     PrometheusModule.register(),
     ScheduleModule.forRoot(),
     EventEmitterModule.forRoot({ wildcard: true, delimiter: '.' }),
@@ -118,7 +125,8 @@ import { PrometheusModule } from '@willsoto/nestjs-prometheus';
     TasksModule,
     ProcessorModule,
     DatabaseModule,
-    AdminModule
+    AdminModule,
+    HealthModule
   ],
   controllers: [],
   providers: [

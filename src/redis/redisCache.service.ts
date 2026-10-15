@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import Redis, { Cluster } from "ioredis";
+import { randomUUID } from "node:crypto";
 
 const TIME_TO_LIVE = 600000
 
@@ -19,6 +20,9 @@ export class RedisCacheService{
     }
     async getRaw(key: string): Promise<string | null> {
         return await this.redisClient.get(key);
+    }
+    async ping(): Promise<string> {
+        return this.redisClient.ping();
     }
     async set(key: string, value: object, ttlMs: number = TIME_TO_LIVE): Promise<void> {
         await this.redisClient.set(key, JSON.stringify(value), 'PX', ttlMs);
@@ -75,5 +79,30 @@ export class RedisCacheService{
         this.logger.error(`Lỗi khi tạo Lock [${key}]: ${error.message}`);
         return false;
         }
+    }
+    // Chỉ một request lấy được khóa để tải dữ liệu khi cache bị miss.
+    async acquireLock(key: string, ttlMs: number): Promise<string | null> {
+    const token = randomUUID();
+    const result = await this.redisClient.set(
+        key,
+        token,
+        'PX',
+        ttlMs,
+        'NX',
+    );
+
+    return result === 'OK' ? token : null;
+    }
+
+    // Chỉ xóa khóa nếu token vẫn thuộc request đã lấy khóa đó.
+    async releaseLock(key: string, token: string): Promise<void> {
+    const script = `
+        if redis.call('get', KEYS[1]) == ARGV[1] then
+        return redis.call('del', KEYS[1])
+        end
+        return 0
+    `;
+
+    await this.redisClient.eval(script, 1, key, token);
     }
 }

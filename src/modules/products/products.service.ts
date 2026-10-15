@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { CreateProductDto, CreateProductVariantDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -189,10 +189,7 @@ export class ProductsService {
   // QUERIES 
   async findAll(query: GetProductsDto) {
     const cacheKey = this.getPaginatedCacheKey(query);
-    
-    const cachedString = await this.cacheService.getRaw(cacheKey);
-    if (cachedString) return cachedString;
-    
+    const result = await this.getCachedOrLoad(cacheKey, async () => {
     const { page = 1, limit = 1, sortBy = 'name', sortOrder = 'asc' } = query;
     const skip = (page - 1) * limit;
 
@@ -204,7 +201,7 @@ export class ProductsService {
 
     const total = await this.prisma.db.product.count();
 
-    const result = {
+    return {
       data: products,
       meta: {
         page, limit, total,
@@ -214,42 +211,83 @@ export class ProductsService {
       },
     };
 
-    await this.cacheService.set(cacheKey, result);
+    });
     return JSON.stringify(result);
   }
 
   async findOne(id: string): Promise<string> {
     const cacheKey = this.getProductCacheKey(id);
-    
-    const cachedProduct = await this.cacheService.getRaw(cacheKey);
-    if (cachedProduct) return cachedProduct;
-    
-    const product = await this.prisma.db.product.findUnique({
-      where: { id },
-      include: { category: true, variants: true },
-    });
-    
-    if (!product) throw new NotFoundException('Không tìm thấy sản phẩm');
-    
-    await this.cacheService.set(cacheKey, product);
-    
+    const product = await this.getCachedOrLoad<ProductWithRelations>(
+      cacheKey,
+      async () => {
+        const found = await this.prisma.db.product.findUnique({
+          where: { id },
+          include: { category: true, variants: true },
+        });
+
+        if (!found) {
+          throw new NotFoundException('Không tìm thấy sản phẩm');
+        }
+
+        return found;
+      },
+    );
     return JSON.stringify(product);
   }
 
   async findOneVariant(id: string): Promise<VariantWithProduct> {
     const cacheKey = this.getVariantCacheKey(id);
     
-    const cachedVariant = await this.cacheService.get<VariantWithProduct>(cacheKey);
-    if (cachedVariant) return cachedVariant;
-    
+    return this.getCachedOrLoad<VariantWithProduct>(cacheKey, async () => {
     const variant = await this.prisma.db.productVariant.findUnique({
       where: { id },
       include: { product: true },
     });
-    
-    if (!variant) throw new NotFoundException('Không tìm thấy biến thể sản phẩm');
-    
-    await this.cacheService.set(cacheKey, variant);
-    return variant as VariantWithProduct;
+
+    if (!variant) {
+      throw new NotFoundException('Không tìm thấy biến thể sản phẩm');
+    }
+
+    return variant;
+  });
+  }
+  // Chống nhiều request cùng truy vấn DB khi một cache key bị miss.
+  private async getCachedOrLoad<T extends object>(
+    cacheKey: string,
+    loadFromDb: () => Promise<T>,
+  ): Promise<T> {
+    const lockKey = `lock:${cacheKey}`;
+    const deadline = Date.now() + 5_000;
+
+    while (Date.now() < deadline) {
+      const cached = await this.cacheService.get<T>(cacheKey);
+      if (cached !== null) return cached;
+
+      const token = await this.cacheService.acquireLock(lockKey, 15_000);
+
+      if (token) {
+        try {
+          // Kiểm tra lại vì request khác có thể vừa nạp cache xong.
+          const cachedAfterLock = await this.cacheService.get<T>(cacheKey);
+          if (cachedAfterLock !== null) return cachedAfterLock;
+
+          const value = await loadFromDb();
+          await this.cacheService.set(cacheKey, value);
+          return value;
+        } finally {
+          // Nhả khóa 
+          await this.cacheService.releaseLock(lockKey, token);
+        }
+      }
+
+      // Request khác đang tải dữ liệu; chờ 50–75 ms rồi đọc Redis lại.
+      await new Promise((resolve) =>
+        setTimeout(resolve, 50 + Math.floor(Math.random() * 26)),
+      );
+    }
+
+    throw new ServiceUnavailableException(
+      'Đang tải dữ liệu, vui lòng thử lại',
+    );
   }
 }

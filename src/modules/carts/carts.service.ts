@@ -99,42 +99,60 @@ const cart = await this.prisma.db.cart.upsert({
       where: { id: variantId },
       select: {
         id: true,
-        name: true, 
+        name: true,
         product: {
-          select: { 
-            name: true 
+          select: {
+            name: true
           }
         }
       }
     });
-    
+
     if (!variant) throw new NotFoundException('Sản phẩm không tồn tại');
 
-    let cart = await this.prisma.db.cart.findFirst({
-      where: { userId },
-      select: { id: true }, 
-    });
-    if (!cart) {
-      cart = await this.prisma.db.cart.create({
-        data: { userId },
-        select: { id: true },
-      });
+    const cacheKey = this.getCacheKey(userId);
+    
+    let cachedCart = await this.cacheService.get<CartWithItems>(cacheKey);
+
+    if (!cachedCart) {
+      cachedCart = await this.getOrCreateCartInDB(userId);
     }
 
-    const cartItem = await this.prisma.db.cartItem.upsert({
-      where: { cartId_variantId: { cartId: cart.id, variantId } },
-      update: { quantity: { increment: quantity } },
-      create: { cartId: cart.id, variantId, quantity },
-    });
+    const existingItemIndex = cachedCart.cartItems.findIndex(
+      (item) => item.variantId === variantId
+    );
+
+    if (existingItemIndex !== -1) {
+      cachedCart.cartItems[existingItemIndex].quantity += quantity;
+    } else {
+      cachedCart.cartItems.push({
+        id: `temp-${Date.now()}`, 
+        quantity: quantity,
+        cartId: cachedCart.id,
+        variantId: variantId,
+      } as unknown as CartWithItems['cartItems'][0]);
+    }
+
+    await this.cacheService.set(cacheKey, cachedCart, 3600000);
+    await this.cacheService.setNumber(`cart_recently_updated:${userId}`, 1, 3000);
 
     this.emitCartEvent(
-      'cartItem.created', 
-      userId, 
+      'cartItem.created',
+      userId,
       `Đã thêm ${variant.product.name} - ${variant.name} x ${quantity} vào giỏ hàng`
     );
-    await this.cacheService.del(this.getCacheKey(userId));
-    await this.cacheService.setNumber(`cart_recently_updated:${userId}`, 1, 3000);
-    return cartItem;
+
+    this.prisma.db.cartItem.upsert({
+      where: { cartId_variantId: { cartId: cachedCart.id, variantId } },
+      update: { quantity: { increment: quantity } },
+      create: { cartId: cachedCart.id, variantId, quantity },
+    }).catch(err => console.error('Lỗi đồng bộ DB:', err));
+
+    const returnItem = existingItemIndex !== -1 
+      ? cachedCart.cartItems[existingItemIndex] 
+      : cachedCart.cartItems[cachedCart.cartItems.length - 1];
+
+    return returnItem;
   }
 
   async removeCartItem(userId: string, cartItemId: string) {
@@ -176,5 +194,18 @@ const cart = await this.prisma.db.cart.upsert({
 
   private emitCartEvent(eventName: string, userId: string, content: string): void {
     this.eventEmitter.emit(eventName, { userId, content });
+  }
+  private async timed<T>(
+    name: string,
+    action: () => Promise<T>,
+  ): Promise<T> {
+    const started = performance.now();
+    try {
+      return await action();
+    } finally {
+      console.log(
+        `[CART_TIMING] ${name}=${(performance.now() - started).toFixed(1)}ms`,
+      );
+    }
   }
 }

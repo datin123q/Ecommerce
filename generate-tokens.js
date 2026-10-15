@@ -9,7 +9,7 @@ JWT_ACCESS_SECRET='super_secret_access_key_123456';
 
 async function main() {
   const users = await prisma.user.findMany({
-    take: 2000,
+    take: 500,
     select: { id: true, email: true, role: true }
   });
 

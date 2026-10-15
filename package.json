@@ -23,6 +23,9 @@
     "test:e2e": "dotenv -e .env.test -- jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@bull-board/api": "^9.10.4",
+    "@bull-board/express": "^9.10.4",
+    "@bull-board/nestjs": "^9.10.4",
     "@nest-lab/throttler-storage-redis": "^1.2.0",
     "@nestjs-modules/ioredis": "^2.2.2",
     "@nestjs-modules/mailer": "^1.11.2",
