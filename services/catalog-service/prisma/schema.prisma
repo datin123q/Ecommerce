@@ -1,0 +1,319 @@
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  CUSTOMER
+  WAREHOUSE_MANAGER
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  AWAITING_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum TransactionType {
+  IN
+  OUT
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum PaymentMethod {
+  COD
+  STRIPE
+}
+
+enum AuditAction {
+  CREATE
+  DELETE
+  UPDATE
+}
+
+// ================= QUẢN LÝ NGƯỜI DÙNG =================
+
+model User {
+  id           String  @id @default(uuid())
+  email        String  @unique
+  password     String
+  fullName     String
+  role         Role    @default(CUSTOMER)
+  avatar       String?
+  refreshToken String?
+
+  carts                  Cart[]
+  orders                 Order[]
+  notifications          Notification[]
+  auditLogs              AuditLog[]
+  inventoryTransactions  InventoryTransaction[]
+  voucherUsages          VoucherUsage[]
+
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  deletedAt              DateTime? 
+  resetPasswordToken     String?
+  resetPasswordExpires   DateTime? 
+  isVerified             Boolean  @default(false)
+  verifyToken            String?
+  verifyExpires          DateTime?
+
+  @@map("Users") 
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  content   String
+  isRead    Boolean  @default(false)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("Notifications")
+}
+
+model AuditLog {
+  id        String      @id @default(uuid())
+  action    AuditAction
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entity    String
+  entityId  String
+  oldValues Json?
+  newValues Json?
+  createdAt DateTime    @default(now())
+
+  @@index([userId])
+  @@index([entityId, entity])
+  @@map("Audits_log")
+}
+
+model ScheduledJobLog{
+  id              String      @id @default(uuid())
+  jobName         String
+  status          String
+  message         String?
+  recordsAffected Int?
+  createdAt DateTime    @default(now())
+
+  @@map("ScheduledJobLog")
+
+}
+
+// ================= DANH MỤC & SẢN PHẨM =================
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  products    Product[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? 
+
+  @@map("Categories")
+}
+
+model Product {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  price       Int
+
+  categoryId String
+  // Đổi onDelete: Cascade thành Restrict (hoặc bỏ trống mặc định là Restrict) 
+  // Để không vô tình xóa Product khi xóa Category
+  category   Category         @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  variants   ProductVariant[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([categoryId])
+  @@map("Products")
+}
+
+model ProductVariant {
+  id      String @id @default(uuid())
+  sku     String @unique
+  name    String
+  variant String
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade) // Cascade ở đây ok vì Product và Variant gắn liền
+
+  inventories Inventory[]
+  cartItems   CartItem[]
+  orderItems  OrderItem[]
+  deletedAt DateTime? 
+
+  @@index([productId])
+  @@map("Product_Variants")
+}
+
+// ================= QUẢN LÝ KHO BÃI =================
+
+model Warehouse {
+  id          String      @id @default(uuid())
+  name        String
+  location    String
+  inventories Inventory[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime? 
+
+  @@map("Warehouses")
+}
+
+model Inventory {
+  id       String @id @default(uuid())
+  quantity Int    @default(0)
+
+  warehouseId  String
+  warehouse    Warehouse              @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  variantId    String
+  variant      ProductVariant         @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  transactions InventoryTransaction[]
+
+  updatedAt DateTime @updatedAt
+
+  @@unique([warehouseId, variantId])
+  @@index([variantId, quantity(sort: Desc)])
+  @@map("Inventories")
+}
+
+model InventoryTransaction {
+  id       String          @id @default(uuid())
+  type     TransactionType // <-- IN hoặc OUT
+  quantity Int
+
+  inventoryId String
+  inventory   Inventory  @relation(fields: [inventoryId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?      @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@map("InventoryTransactions")
+}
+
+// ================= GIỎ HÀNG & ĐƠN HÀNG =================
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String     @unique
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cartItems CartItem[]
+
+  @@map("Carts")
+}
+
+model CartItem {
+  id        String         @id @default(uuid())
+  quantity  Int            @default(1)
+  cartId    String
+  cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  variantId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, variantId])
+  @@map("CartItems")
+}
+
+model Order {
+  id          String      @id @default(uuid())
+  status      OrderStatus @default(PENDING) 
+  totalAmount Int
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict) 
+  orderItems    OrderItem[]
+  voucherUsages VoucherUsage[]
+  payment       Payment?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt(sort: Desc)]) 
+  @@map("Orders")
+}
+
+model OrderItem {
+  id       String @id @default(uuid())
+  quantity Int
+  price    Int
+  productName String
+  sku         String
+  variantId   String? 
+  variant     ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull) 
+  orderId     String
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  inventoryId String?
+
+  @@index([orderId])
+  @@index([variantId])
+  @@map("OrderItems")
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  amount        Int
+  status        PaymentStatus @default(PENDING)
+  method        PaymentMethod @default(COD)
+  transactionId String?
+  orderId       String        @unique
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@map("Payments")
+}
+
+// ================= KHUYẾN MÃI (VOUCHER) =================
+
+model Voucher {
+  id    String @id @default(uuid())
+  code  String @unique
+  limit Int
+  count Int    @default(0)
+  value Int
+
+  usages VoucherUsage[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime? 
+
+  @@map("Vouchers")
+}
+
+model VoucherUsage {
+  id        String  @id @default(uuid())
+  voucherId String
+  voucher   Voucher @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  createdAt DateTime @default(now())
+
+  @@unique([voucherId, orderId])
+  @@index([userId])
+  @@map("VoucherUsages")
+}

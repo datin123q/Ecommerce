@@ -4,6 +4,7 @@ import { AddToCartDto } from './dto/add-to-cart.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RedisCacheService } from '../../redis/redisCache.service';
 import { Prisma } from '@prisma/client';
+import { CatalogClientService } from '../catalog/catalog-client.service';
 
 const cartWithItemsInclude = {
   cartItems: {
@@ -46,6 +47,7 @@ export class CartsService {
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
     private readonly cacheService: RedisCacheService,
+    private readonly catalogClient: CatalogClientService,
   ) {}
 
   public getCacheKey(userId: string): string {
@@ -84,31 +86,34 @@ async getMyCart(userId: string): Promise<CartWithItems> {
   }
 
   private async getOrCreateCartInDB(userId: string): Promise<CartWithItems> {
-const cart = await this.prisma.db.cart.upsert({
+    const cart = await this.prisma.db.cart.upsert({
       where: { userId },
       update: {},
-      create: { userId }, 
-      include: cartWithItemsInclude,
+      create: { userId },
+      include: { cartItems: true },
     });
 
-    return cart as CartWithItems;
+    return cart as unknown as CartWithItems;
   }
 
   async addToCart(userId: string, { variantId, quantity }: AddToCartDto) {
-    const variant = await this.prisma.db.productVariant.findUnique({
-      where: { id: variantId },
-      select: {
-        id: true,
-        name: true,
-        product: {
-          select: {
-            name: true
-          }
-        }
-      }
-    });
+    // const variant = await this.prisma.db.productVariant.findUnique({
+    //   where: { id: variantId },
+    //   select: {
+    //     id: true,
+    //     name: true,
+    //     product: {
+    //       select: {
+    //         name: true
+    //       }
+    //     }
+    //   }
+    // });
+    const lookup = await this.catalogClient.lookupVariants([variantId]);
+    const variant = lookup.data.find((item) => item.id === variantId);
 
-    if (!variant) throw new NotFoundException('Sản phẩm không tồn tại');
+    if (!variant || lookup.notFoundIds.includes(variantId)) 
+      throw new NotFoundException('Sản phẩm không tồn tại');
 
     const cacheKey = this.getCacheKey(userId);
     

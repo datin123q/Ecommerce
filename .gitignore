@@ -60,5 +60,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 /reports/checkout-users.csv
 /generate-tokens.js
 /tokens.csv
-/service/catalog-service/node_modules
-/service/catalog-service/.env
+/services/catalog-service/node_modules/
+/services/catalog-service/.env
+/services/catalog-service/dist/
+/services/catalog-service/build/
