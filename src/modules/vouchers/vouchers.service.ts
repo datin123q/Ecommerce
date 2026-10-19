@@ -3,7 +3,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { CreateVoucherDto } from './dto/create-voucher.dto';
 import { UpdateVoucherDto } from './dto/update-voucher.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client-core';
 
 @Injectable()
 export class VouchersService {

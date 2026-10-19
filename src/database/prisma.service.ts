@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/unbound-method */
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client-core';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import {
@@ -43,10 +43,12 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
     masterPool.on('error', (err) => {
       console.error('Lỗi kết nối ngầm ở Master DB:', err.message);
     });
-    this.masterClient = new PrismaClient({ adapter: new PrismaPg(masterPool), log: [ { emit: 'event', level: 'query' } ], });
-    this.masterClient.$on('query', (e: Prisma.QueryEvent) => {
-      console.log(`[MASTER DB] Query: ${e.query} | Params: ${e.params}`);
+    this.masterClient = new PrismaClient({ adapter: new PrismaPg(masterPool), 
+      //log: [ { emit: 'event', level: 'query' } ], 
     });
+    // this.masterClient.$on('query', (e: Prisma.QueryEvent) => {
+    //   console.log(`[MASTER DB] Query: ${e.query} | Params: ${e.params}`);
+    // });
 
     const replicaUrls = (
       process.env.DATABASE_REPLICA_URLS ||
@@ -66,12 +68,12 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       });
       const client = new PrismaClient({ 
         adapter: new PrismaPg(replicaPool), 
-        log: [{ emit: 'event', level: 'query' }], 
+        //log: [{ emit: 'event', level: 'query' }], 
       });
 
-      client.$on('query', (e: Prisma.QueryEvent) => {
-        console.log(`[REPLICA DB ${index + 1}] Query: ${e.query} | Params: ${e.params}`);
-      });
+      // client.$on('query', (e: Prisma.QueryEvent) => {
+      //   console.log(`[REPLICA DB ${index + 1}] Query: ${e.query} | Params: ${e.params}`);
+      // });
 
       this.replicaClients.push(client);
     });

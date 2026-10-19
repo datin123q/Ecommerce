@@ -17,10 +17,13 @@ export class GetProductsDto {
   @Min(1)
   limit?: number = 5;
 
-  @ApiPropertyOptional({ enum: ['name', 'price'], example: 'name' })
+  @ApiPropertyOptional({
+    enum: ['name', 'price', 'createdAt'],
+    example: 'name',
+  })
   @IsOptional()
-  @IsIn(['name', 'price'])
-  sortBy: 'name' | 'price' = 'name';
+  @IsIn(['name', 'price', 'createdAt'])
+  sortBy: 'name' | 'price' | 'createdAt' = 'name';
 
   @ApiPropertyOptional({ enum: ['asc', 'desc'], example: 'asc' })
   @IsOptional()

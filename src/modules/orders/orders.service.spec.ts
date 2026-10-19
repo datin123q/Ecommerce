@@ -7,7 +7,7 @@ import { InventoryService } from '../inventory/inventory.service';
 import { VouchersService } from '../vouchers/vouchers.service';
 import { CartsService } from '../carts/carts.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus } from '@prisma/client-core';
 
 // Import trực tiếp các Domain Class để Mock Static Method
 import { InventoryAllocation } from './domain/inventory-allocation';

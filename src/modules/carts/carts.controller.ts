@@ -4,7 +4,7 @@ import { AddToCartDto } from './dto/add-to-cart.dto';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Role } from '@prisma/client';
+import { Role } from '@prisma/client-core';
 
 interface AuthenticatedUser {
   id: string;

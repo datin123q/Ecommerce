@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { IdempotencyInterceptor } from '../../common/interceptors/idempotency.interceptor';
 import { ApiHeader } from '@nestjs/swagger';
-import { Role } from '@prisma/client';
+import { Role } from '@prisma/client-core';
 import { StartFlashSaleDto } from './dto/flash-sale.dto';
 
 interface AuthenticatedUser {

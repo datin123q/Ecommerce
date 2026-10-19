@@ -3,7 +3,7 @@ import { InventoryService } from './inventory.service';
 import { PrismaService } from '../../database/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
-import { TransactionType } from '@prisma/client';
+import { TransactionType } from '@prisma/client-core';
 
 describe('InventoryService', () => {
   let service: InventoryService;

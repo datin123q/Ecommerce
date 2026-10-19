@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import type { Inventory } from '@prisma/client';
+import type { Inventory } from '@prisma/client-core';
 import type { CartWithItems } from '../orders.service';
 
 export class InventoryAllocation {

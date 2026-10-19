@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { AuditAction, Prisma } from '@prisma/client';
+import { AuditAction, Prisma } from '@prisma/client-core';
 import { PrismaService } from '../../database/prisma.service';
 
 interface AuditEventPayload {

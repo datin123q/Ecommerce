@@ -18,7 +18,7 @@ import {
   Order,
   Payment,
   Prisma,
-} from '@prisma/client';
+} from '@prisma/client-core';
 
 import { EventEmitter2 } from '@nestjs/event-emitter';
 

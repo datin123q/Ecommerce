@@ -9,7 +9,7 @@ import {
   PrismaClient,
   Role,
   TransactionType,
-} from '@prisma/client';
+} from '@prisma/client-core';
 
 type SeedConfig = {
   batch: string;
@@ -146,9 +146,9 @@ async function main(): Promise<void> {
       }),
     );
     console.log('Tạo categories...');
-    await insertInBatches(categoryRows, (data) =>
-      prisma.category.createMany({ data, skipDuplicates: true }),
-    );
+    // await insertInBatches(categoryRows, (data) =>
+    //   prisma.category.createMany({ data, skipDuplicates: true }),
+    // );
 
     const productRows = Array.from({ length: config.products }, (_, index) => ({
       id: stableId(config.batch, 'product', String(index)),
@@ -158,9 +158,9 @@ async function main(): Promise<void> {
       categoryId: categoryRows[index % categoryRows.length].id,
     }));
     console.log('Tạo products...');
-    await insertInBatches(productRows, (data) =>
-      prisma.product.createMany({ data, skipDuplicates: true }),
-    );
+    // await insertInBatches(productRows, (data) =>
+    //   prisma.product.createMany({ data, skipDuplicates: true }),
+    // );
 
     const variantRows = productRows.flatMap((product, productIndex) =>
       Array.from({ length: config.variantsPerProduct }, (_, variantIndex) => ({
@@ -176,9 +176,9 @@ async function main(): Promise<void> {
       })),
     );
     console.log('Tạo variants...');
-    await insertInBatches(variantRows, (data) =>
-      prisma.productVariant.createMany({ data, skipDuplicates: true }),
-    );
+    // await insertInBatches(variantRows, (data) =>
+    //   prisma.productVariant.createMany({ data, skipDuplicates: true }),
+    // );
 
     const warehouseRows = Array.from(
       { length: config.warehouses },

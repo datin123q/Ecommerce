@@ -1,64 +1,33 @@
 import {
-  BadGatewayException,
-  ConflictException,
-  HttpException,
   Injectable,
-  NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RedisCacheService } from '../../redis/redisCache.service';
+import { CatalogProductClientService } from '../catalog/product/catalog-product-client.service';
+import {
+  CatalogProduct,
+  CatalogProductsPage,
+  CatalogVariant,
+} from '../catalog/product/catalog-product.types';
 import { CreateProductDto, CreateProductVariantDto } from './dto/create-product.dto';
 import { GetProductsDto } from './dto/get-products.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateProductVariantDto } from './dto/update-product-variant.dto';
 
-export interface ProductWithRelations {
-  id: string;
-  name: string;
-  description: string | null;
-  price: number;
-  categoryId: string;
-  createdAt: string;
-  updatedAt: string;
-  deletedAt: string | null;
-  category?: Record<string, unknown>;
-  variants?: VariantWithProduct[];
-}
-
-export interface VariantWithProduct {
-  id: string;
-  sku: string;
-  name: string;
-  variant: string;
-  productId: string;
-  deletedAt: string | null;
-  product?: ProductWithRelations;
-}
-
-interface ProductsPage {
-  data: ProductWithRelations[];
-  meta: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-    hasNextPage: boolean;
-    hasPreviousPage: boolean;
-  };
-}
+export type ProductWithRelations = CatalogProduct;
+export type VariantWithProduct = CatalogVariant;
 
 @Injectable()
 export class ProductsService {
   constructor(
-    private readonly config: ConfigService,
+    private readonly catalogClient: CatalogProductClientService,
     private readonly eventEmitter: EventEmitter2,
     private readonly cacheService: RedisCacheService,
   ) {}
 
   getDashboardActiveProductCount(): Promise<number> {
-    return this.callCatalog<number>('GET', '/products/count');
+    return this.catalogClient.getActiveProductCount();
   }
 
   private getProductCacheKey(id: string) { return `product_${id}_v`; }
@@ -85,11 +54,7 @@ export class ProductsService {
   }
 
   async create(dto: CreateProductDto, adminId: string) {
-    const newProduct = await this.callCatalog<ProductWithRelations>(
-      'POST',
-      '/products',
-      dto,
-    );
+    const newProduct = await this.catalogClient.createProduct(dto);
 
     this.eventEmitter.emit('product.created', {
       id: adminId,
@@ -104,15 +69,8 @@ export class ProductsService {
   }
 
   async updateProduct(id: string, dto: UpdateProductDto, adminId: string) {
-    const oldProduct = await this.callCatalog<ProductWithRelations>(
-      'GET',
-      `/products/${encodeURIComponent(id)}`,
-    );
-    const newProduct = await this.callCatalog<ProductWithRelations>(
-      'PATCH',
-      `/products/${encodeURIComponent(id)}`,
-      dto,
-    );
+    const oldProduct = await this.catalogClient.getProduct(id);
+    const newProduct = await this.catalogClient.updateProduct(id, dto);
 
     this.eventEmitter.emit('product.update', {
       id: adminId,
@@ -131,11 +89,7 @@ export class ProductsService {
     dto: CreateProductVariantDto,
     adminId: string,
   ) {
-    const newVariant = await this.callCatalog<VariantWithProduct>(
-      'POST',
-      `/products/${encodeURIComponent(productId)}/variants`,
-      dto,
-    );
+    const newVariant = await this.catalogClient.addVariant(productId, dto);
 
     this.eventEmitter.emit('variant.created', {
       id: adminId,
@@ -154,15 +108,8 @@ export class ProductsService {
     dto: UpdateProductVariantDto,
     adminId: string,
   ) {
-    const oldVariant = await this.callCatalog<VariantWithProduct>(
-      'GET',
-      `/products/variants/${encodeURIComponent(id)}`,
-    );
-    const newVariant = await this.callCatalog<VariantWithProduct>(
-      'PATCH',
-      `/products/variants/${encodeURIComponent(id)}`,
-      dto,
-    );
+    const oldVariant = await this.catalogClient.getVariant(id);
+    const newVariant = await this.catalogClient.updateVariant(id, dto);
 
     this.eventEmitter.emit('variant.update', {
       id: adminId,
@@ -181,14 +128,8 @@ export class ProductsService {
   }
 
   async remove(id: string, adminId: string) {
-    const oldProduct = await this.callCatalog<ProductWithRelations>(
-      'GET',
-      `/products/${encodeURIComponent(id)}`,
-    );
-    const deletedProduct = await this.callCatalog<ProductWithRelations>(
-      'DELETE',
-      `/products/${encodeURIComponent(id)}`,
-    );
+    const oldProduct = await this.catalogClient.getProduct(id);
+    const deletedProduct = await this.catalogClient.removeProduct(id);
 
     this.eventEmitter.emit('product.deleted', {
       id: adminId,
@@ -203,14 +144,8 @@ export class ProductsService {
   }
 
   async removeVariant(id: string, adminId: string) {
-    const oldVariant = await this.callCatalog<VariantWithProduct>(
-      'GET',
-      `/products/variants/${encodeURIComponent(id)}`,
-    );
-    const deletedVariant = await this.callCatalog<VariantWithProduct>(
-      'DELETE',
-      `/products/variants/${encodeURIComponent(id)}`,
-    );
+    const oldVariant = await this.catalogClient.getVariant(id);
+    const deletedVariant = await this.catalogClient.removeVariant(id);
 
     this.eventEmitter.emit('variant.deleted', {
       id: adminId,
@@ -230,25 +165,17 @@ export class ProductsService {
 
   async findAll(query: GetProductsDto): Promise<string> {
     const cacheKey = this.getPaginatedCacheKey(query);
-    const result = await this.getCachedOrLoad<ProductsPage>(cacheKey, async () => {
-      const params = new URLSearchParams({
-        page: String(query.page ?? 1),
-        limit: String(query.limit ?? 5),
-        sortBy: query.sortBy ?? 'name',
-        sortOrder: query.sortOrder ?? 'asc',
-      });
-      return this.callCatalog<ProductsPage>('GET', `/products?${params.toString()}`);
-    });
+    const result = await this.getCachedOrLoad<CatalogProductsPage>(
+      cacheKey,
+      () => this.catalogClient.getProducts(query),
+    );
     return JSON.stringify(result);
   }
 
   async findOne(id: string): Promise<string> {
     const product = await this.getCachedOrLoad<ProductWithRelations>(
       this.getProductCacheKey(id),
-      () => this.callCatalog<ProductWithRelations>(
-        'GET',
-        `/products/${encodeURIComponent(id)}`,
-      ),
+      () => this.catalogClient.getProduct(id),
     );
     return JSON.stringify(product);
   }
@@ -256,58 +183,8 @@ export class ProductsService {
   findOneVariant(id: string): Promise<VariantWithProduct> {
     return this.getCachedOrLoad<VariantWithProduct>(
       this.getVariantCacheKey(id),
-      () => this.callCatalog<VariantWithProduct>(
-        'GET',
-        `/products/variants/${encodeURIComponent(id)}`,
-      ),
+      () => this.catalogClient.getVariant(id),
     );
-  }
-
-  private async callCatalog<T>(
-    method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
-    path: string,
-    body?: unknown,
-  ): Promise<T> {
-    const baseUrl = this.config.get<string>('CATALOG_SERVICE_URL');
-    if (!baseUrl) {
-      throw new ServiceUnavailableException(
-        'Commerce chưa cấu hình URL của Catalog service',
-      );
-    }
-
-    let response: Response;
-    try {
-      response = await fetch(
-        `${baseUrl.replace(/\/$/, '')}/api/v1${path}`,
-        {
-          method,
-          headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-          body: body === undefined ? undefined : JSON.stringify(body),
-          signal: AbortSignal.timeout(3000),
-        },
-      );
-    } catch {
-      throw new ServiceUnavailableException(
-        'Không kết nối được tới Catalog service',
-      );
-    }
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      const message =
-        payload && typeof payload === 'object' && 'message' in payload
-          ? (payload as { message: string | string[] }).message
-          : `Catalog service trả về HTTP ${response.status}`;
-
-      if (response.status === 404) throw new NotFoundException(message);
-      if (response.status === 409) throw new ConflictException(message);
-      if (response.status >= 400 && response.status < 500) {
-        throw new HttpException(message, response.status);
-      }
-      throw new BadGatewayException(message);
-    }
-
-    return (await response.json()) as T;
   }
 
   // Chống nhiều request cùng truy vấn Catalog khi một cache key bị miss.

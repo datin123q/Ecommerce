@@ -4,7 +4,7 @@ import { UpdateProfileDto } from './dto/user-update.dto';
 import { ApiBearerAuth, ApiOperation, ApiTags, ApiBody } from '@nestjs/swagger';
 import { v2 as cloudinary } from 'cloudinary';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { Role } from '@prisma/client';
+import { Role } from '@prisma/client-core';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ConfigService } from '@nestjs/config';
 

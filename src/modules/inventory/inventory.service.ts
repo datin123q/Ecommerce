@@ -4,7 +4,7 @@ import { CreateWarehouseDto } from './dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from './dto/update-warehouse.dto';
 import { StockInDto } from './dto/stock-in.dto';
 import { StockOutDto } from './dto/stock-out.dto';
-import { TransactionType, Prisma, Inventory } from '@prisma/client';
+import { TransactionType, Prisma, Inventory } from '@prisma/client-core';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { GetInventoriesDto } from './dto/get-inventories.dto';
 

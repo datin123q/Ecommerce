@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus } from '@prisma/client-core';
 
 export class StateTransition {
   private static readonly transitions: Record<OrderStatus, OrderStatus[]> = {

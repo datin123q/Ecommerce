@@ -2,7 +2,7 @@ import { Injectable, BadRequestException, NotFoundException, Logger } from '@nes
 import { PrismaService } from '../../database/prisma.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { GetAllOrdersDto } from './dto/all-orders.dto';
-import { OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
+import { OrderStatus, PaymentStatus, Prisma } from '@prisma/client-core';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
 import { StateTransition } from './domain/state-transition';

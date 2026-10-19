@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { Prisma, Role } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client-core';
 import { UpdateProfileDto } from './dto/user-update.dto';
 import * as argon2 from 'argon2';
 import { EventEmitter2 } from '@nestjs/event-emitter';

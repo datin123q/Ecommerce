@@ -4,7 +4,7 @@ import { PrismaService } from '../../database/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RedisCacheService } from '../../redis/redisCache.service';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client-core';
 
 describe('CategoriesService', () => {
   let service: CategoriesService;

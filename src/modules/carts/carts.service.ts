@@ -3,8 +3,8 @@ import { PrismaService } from '../../database/prisma.service';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RedisCacheService } from '../../redis/redisCache.service';
-import { Prisma } from '@prisma/client';
-import { CatalogClientService } from '../catalog/catalog-client.service';
+import { Prisma } from '@prisma/client-core';
+import { CatalogProductVariantClientService } from '../catalog/productvariant/catalog-productvariant-client.service';
 
 const cartWithItemsInclude = {
   cartItems: {
@@ -47,7 +47,7 @@ export class CartsService {
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
     private readonly cacheService: RedisCacheService,
-    private readonly catalogClient: CatalogClientService,
+    private readonly catalogClient: CatalogProductVariantClientService,
   ) {}
 
   public getCacheKey(userId: string): string {
@@ -97,22 +97,20 @@ async getMyCart(userId: string): Promise<CartWithItems> {
   }
 
   async addToCart(userId: string, { variantId, quantity }: AddToCartDto) {
-    // const variant = await this.prisma.db.productVariant.findUnique({
-    //   where: { id: variantId },
-    //   select: {
-    //     id: true,
-    //     name: true,
-    //     product: {
-    //       select: {
-    //         name: true
-    //       }
-    //     }
-    //   }
-    // });
-    const lookup = await this.catalogClient.lookupVariants([variantId]);
-    const variant = lookup.data.find((item) => item.id === variantId);
+    const variant = await this.prisma.db.productVariant.findUnique({
+      where: { id: variantId },
+      select: {
+        id: true,
+        name: true,
+        product: {
+          select: {
+            name: true
+          }
+        }
+      }
+    });
 
-    if (!variant || lookup.notFoundIds.includes(variantId)) 
+    if (!variant) 
       throw new NotFoundException('Sản phẩm không tồn tại');
 
     const cacheKey = this.getCacheKey(userId);

@@ -3,7 +3,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from './../src/app.module';
 import { PrismaService } from './../src/database/prisma.service';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus } from '@prisma/client-core';
 import { useContainer } from 'class-validator';
 describe('Hành trình Mua hàng - Checkout Flow (e2e)', () => {
   let app: INestApplication;

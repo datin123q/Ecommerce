@@ -3,7 +3,7 @@ import { UsersService } from './users.service';
 import { PrismaService } from '../../database/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotFoundException } from '@nestjs/common';
-import { Role } from '@prisma/client';
+import { Role } from '@prisma/client-core';
 import * as argon2 from 'argon2';
 
 jest.mock('argon2');

@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsEnum, IsNotEmpty, IsString } from 'class-validator';
-import { PaymentMethod } from '@prisma/client';
+import { PaymentMethod } from '@prisma/client-core';
 
 export class CreatePaymentDto {
   @ApiProperty({ example: 'clq123456...', description: 'ID của đơn hàng' })

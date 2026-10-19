@@ -1,10 +1,11 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../../database/prisma.service";
-import { OrderStatus, TransactionType, Prisma } from '@prisma/client';
+import { OrderStatus, TransactionType, Prisma } from '@prisma/client-core';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
 import { RedisCacheService } from '../../redis/redisCache.service';
+import { CatalogProductClientService } from "../catalog/product/catalog-product-client.service";
 
 const JOB_CONSTANTS = {
     CANCEL_ORDERS: {
@@ -29,7 +30,8 @@ export class TasksService {
     constructor(
         private readonly prisma: PrismaService,
         @InjectQueue('mail-queue') private readonly mailQueue: Queue,
-        private readonly cacheService: RedisCacheService
+        private readonly cacheService: RedisCacheService,
+        private readonly catalogClient: CatalogProductClientService,
     ) {}
 
     // CRON JOBS DEFINITIONS
@@ -50,20 +52,17 @@ export class TasksService {
         const { NAME, LOCK_KEY, TTL_SEC, TOP_PRODUCTS_LIMIT } = JOB_CONSTANTS.MAIL_MARKETING;
 
         return this.executeWithLock(NAME, LOCK_KEY, TTL_SEC, async () => {
-            const [users, topProducts] = await Promise.all([
+            const [users, productsPage] = await Promise.all([
                 this.prisma.db.user.findMany({
                     where: { isVerified: true },
                     select: { id: true, email: true, fullName: true },
                 }),
-                this.prisma.db.product.findMany({
-                    take: TOP_PRODUCTS_LIMIT,
-                    orderBy: { createdAt: 'desc' },
-                })
+                this.catalogClient.getLatestProducts(TOP_PRODUCTS_LIMIT),
             ]);
+            const products = productsPage.data;
+            if (!users.length || !products.length) return 0;
 
-            if (!users.length || !topProducts.length) return 0;
-
-            await this.dispatchMarketingEmails(users, topProducts);
+            await this.dispatchMarketingEmails(users, products);
             return users.length;
         });
     }

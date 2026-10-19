@@ -9,7 +9,7 @@ import { ApiHeader } from '@nestjs/swagger';
 
 import type { RawBodyRequest } from '@nestjs/common';
 import type { Request } from 'express';
-import { Role } from '@prisma/client';
+import { Role } from '@prisma/client-core';
 
 interface AuthenticatedUser {
   id: string;

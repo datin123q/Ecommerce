@@ -14,7 +14,7 @@ import {
   PaymentMethod,
   PaymentStatus,
   OrderStatus,
-} from '@prisma/client';
+} from '@prisma/client-core';
 
 import {
   PAYMENT_PROVIDER,

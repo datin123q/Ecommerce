@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus } from '@prisma/client-core';
 import { OrdersService } from '../../orders/orders.service';
 import { PaymentsService } from '../../payments/payments.service';
 import { InventoryService } from '../../inventory/inventory.service';

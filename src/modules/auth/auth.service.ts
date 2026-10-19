@@ -6,7 +6,7 @@ import { JwtService, JwtSignOptions } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { User } from '@prisma/client';
+import { User } from '@prisma/client-core';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 
