@@ -8,16 +8,12 @@ import session from 'express-session';
 import { RedisStore } from 'connect-redis';
 import { Redis } from 'ioredis';
 
-import { WinstonModule, utilities as nestWinstonModuleUtilities } from 'nest-winston'; 
-import * as winston from 'winston';
 import helmet from 'helmet';
-import DailyRotateFile from 'winston-daily-rotate-file'; 
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { TransformInterceptor } from './common/interceptors/tranform.interceptor';
 import { useContainer } from 'class-validator';
 import cookieParser from 'cookie-parser';
 import { Response } from 'express';
-import { asyncLocalStorage } from './common/Logger/async-storage';
 import { winstonLogger } from './common/Logger/winston.logger';
 
 async function bootstrap() {

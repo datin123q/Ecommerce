@@ -16,6 +16,8 @@ export type VariantWithProduct = Prisma.ProductVariantGetPayload<{
   include: { product: true }
 }>;
 
+const COPY_COUNT = 3;
+
 @Injectable()
 export class ProductsService {
   constructor(
@@ -46,9 +48,9 @@ export class ProductsService {
     keysToDelete.push('products_key'); 
     await this.cacheService.delByPattern('products:page=*');
 
-    if (productId) keysToDelete.push(this.getProductCacheKey(productId));
+    if (productId) keysToDelete.push(`${this.getProductCacheKey(productId)}:copy:0`, `${this.getProductCacheKey(productId)}:copy:1`, `${this.getProductCacheKey(productId)}:copy:2`);
     if (categoryId) keysToDelete.push(this.getCategoryCacheKey(categoryId));
-    if (variantId) keysToDelete.push(this.getVariantCacheKey(variantId));
+    if (variantId) keysToDelete.push(`${this.getVariantCacheKey(variantId)}:copy:0`, `${this.getVariantCacheKey(variantId)}:copy:1`, `${this.getVariantCacheKey(variantId)}:copy:2`);
 
     if (keysToDelete.length > 0) {
       await this.cacheService.del(...keysToDelete);
@@ -260,7 +262,8 @@ export class ProductsService {
     const deadline = Date.now() + 5_000;
 
     while (Date.now() < deadline) {
-      const cached = await this.cacheService.get<T>(cacheKey);
+      const copy = Math.floor(Math.random() * COPY_COUNT);
+      const cached = await this.cacheService.get<T>(`${cacheKey}:copy:${copy}`);
       if (cached !== null) return cached;
 
       const token = await this.cacheService.acquireLock(lockKey, 15_000);
@@ -268,11 +271,11 @@ export class ProductsService {
       if (token) {
         try {
           // Kiểm tra lại vì request khác có thể vừa nạp cache xong.
-          const cachedAfterLock = await this.cacheService.get<T>(cacheKey);
+          const cachedAfterLock = await this.cacheService.get<T>(`${cacheKey}:copy:${copy}`);
           if (cachedAfterLock !== null) return cachedAfterLock;
 
           const value = await loadFromDb();
-          await this.cacheService.set(cacheKey, value);
+          await this.cacheService.setCopies(cacheKey, value, COPY_COUNT);
           return value;
         } finally {
           // Nhả khóa 

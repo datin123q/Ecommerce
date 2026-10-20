@@ -1,4 +1,3 @@
-// src/common/winston.logger.ts
 import { WinstonModule, utilities as nestWinstonModuleUtilities } from 'nest-winston';
 import * as winston from 'winston';
 

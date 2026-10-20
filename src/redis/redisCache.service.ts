@@ -35,6 +35,23 @@ export class RedisCacheService{
         await this.redisClient.del(...keys);
         }
     }
+
+    async setCopies(
+        key: string,
+        value: object,
+        copies = 3,
+        ttlMs: number = TIME_TO_LIVE,
+        ): Promise<void> {
+        const serializedValue = JSON.stringify(value);
+
+        const pipeline = this.redisClient.pipeline();
+
+        for (let i = 0; i < copies; i++) {
+            pipeline.set(`${key}:copy:${i}`, serializedValue, 'PX', ttlMs);
+        }
+
+        await pipeline.exec();
+        }
     async delByPattern(pattern: string): Promise<void> {
         try {
         const keysToDelete: string[] = [];
