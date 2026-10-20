@@ -9,13 +9,14 @@ import { Queue } from 'bullmq';
 import { User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import { asyncLocalStorage } from 'src/common/Logger/async-storage';
 
 const TOKEN_EXPIRATION_MS = 15 * 60 * 1000; // 15 phút
 const MAIL_QUEUE_NAME = 'mail-queue';
 const JOB_VERIFY_ACCOUNT = 'verify-account';
 const JOB_FORGOT_PASSWORD = 'forgot-password';
 const BCRYPT_SALT_ROUNDS = 10;
-
+const requestId = asyncLocalStorage.getStore()?.requestId;
 interface JwtPayload {
   sub: string;
   email: string;
@@ -67,10 +68,9 @@ export class AuthService {
     });
 
     const verifyUrl = `${this.getFrontendUrl()}/verify?token=${rawToken}`; 
-    
     await this.mailQueue.add(
       JOB_VERIFY_ACCOUNT, 
-      { email: user.email, verifyUrl },
+      { email: user.email, verifyUrl, requestId },
       { removeOnComplete: true, attempts: 3 },
     );
 
@@ -108,10 +108,9 @@ export class AuthService {
     });
 
     const resetUrl = `${this.getFrontendUrl()}/reset-password?token=${rawToken}`;
-    
     await this.mailQueue.add(
       JOB_FORGOT_PASSWORD, 
-      { email: user.email, resetUrl },
+      { email: user.email, resetUrl, requestId },
       { removeOnComplete: true, attempts: 3 },
     );
 

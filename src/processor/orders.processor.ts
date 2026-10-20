@@ -22,7 +22,7 @@ export class OrderProcessor extends WorkerHost {
     switch (job.name) {
       case 'cleanup-cart': {
         const { orderId, cartId } = job.data;
-        this.logger.log(`[Worker] Đang xử lý dọn dẹp giỏ hàng cho đơn ${orderId}`);
+        this.logger.log(`[${job.data.requestId}]   [Worker] Đang xử lý dọn dẹp giỏ hàng cho đơn ${orderId}`);
         await this.prisma.db.cartItem.deleteMany({
           where: { cartId: cartId }
         });
@@ -36,6 +36,7 @@ export class OrderProcessor extends WorkerHost {
           pricing,
           itemsSnapshot,
           flashReservation,
+          requestId
         } = job.data;
 
         let order;
@@ -66,7 +67,7 @@ export class OrderProcessor extends WorkerHost {
             cartId,
           );
         } catch (error) {
-          this.logger.error(`Tạo đơn thành công nhưng dọn giỏ lỗi: ${error.message}`);
+          this.logger.error(`[${requestId}]  Tạo đơn thành công nhưng dọn giỏ lỗi: ${error.message}`);
         }
 
         return order;

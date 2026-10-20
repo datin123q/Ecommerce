@@ -74,7 +74,6 @@
     "streamifier": "^0.1.1",
     "stripe": "^22.5.0",
     "swagger-ui-express": "^5.0.1",
-    "uuid": "^14.0.2",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0"
   },

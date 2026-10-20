@@ -5,6 +5,7 @@ import { Queue } from 'bullmq';
 import { NotificationsGateway } from './notifications.gateway';
 import { GetNotificationsDto } from './dto/get-notifications.dto';
 import { RedisCacheService } from '../../redis/redisCache.service';
+import { asyncLocalStorage } from 'src/common/Logger/async-storage';
 
 @Injectable()
 export class NotificationsService {
@@ -73,7 +74,7 @@ export class NotificationsService {
     return { message: 'Đã đánh dấu đọc tất cả' };
   }
 
-  async createNotification(userId: string, content: string) {
+  async createNotification(userId: string, content: string, requestId: string) {
     const newNoti = await this.prisma.db.notification.create({
       data: { userId, content, isRead: false },
     });
@@ -86,15 +87,16 @@ export class NotificationsService {
     });
 
     await this.invalidateUserCache(userId);
-    this.logger.log(`Đã tạo và bắn realtime thông báo cho User: ${userId}: ${unreadCount}`);
+    this.logger.log(`[${requestId}]   Đã tạo và bắn realtime thông báo cho User: ${userId}: ${unreadCount}`);
 
     return newNoti;
   }
 
   async pushNotificationToQueue(userId: string, content: string) {
+    const requestId = asyncLocalStorage.getStore()?.requestId;
     await this.notificationQueue.add(
       'create-notification-job',
-      { userId, content },
+      { userId, content, requestId },
       { attempts: 3, removeOnComplete: true },
     );
   }

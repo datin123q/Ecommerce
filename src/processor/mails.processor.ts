@@ -23,14 +23,14 @@ export class MailProcessor extends WorkerHost {
     }
 
     private async executeJob(job: Job<any, void, string>): Promise<void> {
-        this.logger.log(`Bắt đầu xử lý Job: ${job.name}`);
+        this.logger.log(`[${job.data.requestId}]   Bắt đầu xử lý Job: ${job.name}`);
         const emailStrategy = this.emailStrategyFactory.create(job.name);
         await emailStrategy.send(job.data);
-        this.logger.log(`Xử lý Job: ${job.name} thành công!`);
+        this.logger.log(`[${job.data.requestId}]   Xử lý Job: ${job.name} thành công!`);
     }
 
     private handleJobError(job: Job<any, void, string>, error: Error): never {
-        this.logger.error(`Job ${job.name} thất bại: ${error.message}`);
+        this.logger.error(`[${job.data.requestId}]   Job ${job.name} thất bại: ${error.message}`);
         throw error; 
     }
 }

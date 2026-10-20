@@ -13,7 +13,7 @@ export class NotificationProcessor extends WorkerHost {
   }
 
   async process(job: Job<any, any, string>): Promise<any> {
-    this.logger.log(`[Worker] Bắt đầu xử lý Job: ${job.name}`);
+    this.logger.log(`[${job.data.requestId}] [Worker] Bắt đầu xử lý Job: ${job.name}`);
 
     switch (job.name) {
       case 'create-notification-job': 
@@ -21,16 +21,17 @@ export class NotificationProcessor extends WorkerHost {
           await this.notificationsService.createNotification(
             job.data.userId, 
             job.data.content,
+            job.data.requestId
           );
-          this.logger.log(`[Worker] Đã lưu thông báo cho User ${job.data.userId}`);
+          this.logger.log(`[${job.data.requestId}]   [Worker] Đã lưu thông báo cho User ${job.data.userId}`);
         } catch (error) {
-          this.logger.error(`[Worker]  Lỗi khi lưu thông báo: ${error.message}`);
+          this.logger.error(`[${job.data.requestId}]   [Worker]  Lỗi khi lưu thông báo: ${error.message}`);
           throw error; 
         }
         break;
 
       default:
-        this.logger.warn(`[Worker]  Bỏ qua Job vì không nhận diện được tên: ${job.name}`);
+        this.logger.warn(`[${job.data.requestId}]   [Worker]  Bỏ qua Job vì không nhận diện được tên: ${job.name}`);
     }
   }
 }

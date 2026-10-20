@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { AddToCartDto } from './dto/add-to-cart.dto';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -42,6 +42,7 @@ export type CheckoutCartPayload = Prisma.CartGetPayload<{
 
 @Injectable()
 export class CartsService {
+  private readonly logger = new Logger(CartsService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
@@ -151,7 +152,7 @@ const cart = await this.prisma.db.cart.upsert({
     const returnItem = existingItemIndex !== -1 
       ? cachedCart.cartItems[existingItemIndex] 
       : cachedCart.cartItems[cachedCart.cartItems.length - 1];
-
+    this.logger.log('đã thêm vào giỏ');
     return returnItem;
   }
 
@@ -194,18 +195,5 @@ const cart = await this.prisma.db.cart.upsert({
 
   private emitCartEvent(eventName: string, userId: string, content: string): void {
     this.eventEmitter.emit(eventName, { userId, content });
-  }
-  private async timed<T>(
-    name: string,
-    action: () => Promise<T>,
-  ): Promise<T> {
-    const started = performance.now();
-    try {
-      return await action();
-    } finally {
-      console.log(
-        `[CART_TIMING] ${name}=${(performance.now() - started).toFixed(1)}ms`,
-      );
-    }
   }
 }

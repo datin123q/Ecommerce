@@ -150,13 +150,7 @@ services:
       sh -c "
         echo 'Dang cho cac node khoi dong...' &&
         sleep 5 &&
-        IP1=$$(ping -c 1 redis-node-1 | grep PING | cut -d '(' -f2 | cut -d ')' -f1) &&
-        IP2=$$(ping -c 1 redis-node-2 | grep PING | cut -d '(' -f2 | cut -d ')' -f1) &&
-        IP3=$$(ping -c 1 redis-node-3 | grep PING | cut -d '(' -f2 | cut -d ')' -f1) &&
-        IP4=$$(ping -c 1 redis-node-4 | grep PING | cut -d '(' -f2 | cut -d ')' -f1) &&
-        IP5=$$(ping -c 1 redis-node-5 | grep PING | cut -d '(' -f2 | cut -d ')' -f1) &&
-        IP6=$$(ping -c 1 redis-node-6 | grep PING | cut -d '(' -f2 | cut -d ')' -f1) &&
-        redis-cli --cluster create $$IP1:6379 $$IP2:6379 $$IP3:6379 $$IP4:6379 $$IP5:6379 $$IP6:6379 --cluster-replicas 1 --cluster-yes
+        redis-cli --cluster create 172.25.0.11:6379 172.25.0.12:6379 172.25.0.13:6379 172.25.0.14:6379 172.25.0.15:6379 172.25.0.16:6379 --cluster-replicas 1 --cluster-yes
       "
 
   nginx:

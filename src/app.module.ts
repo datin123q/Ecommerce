@@ -133,10 +133,8 @@ import { HealthModule } from './health/health.module';
     { provide: APP_GUARD, useClass: ThrottlerGuard }
   ],
 })
-export class AppModule implements NestModule { 
+export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(AppLoggerMiddleware) 
-      .forRoutes('{*path}');
+    consumer.apply(AppLoggerMiddleware).forRoutes('*');
   }
 }

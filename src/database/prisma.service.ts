@@ -44,9 +44,9 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
       console.error('Lỗi kết nối ngầm ở Master DB:', err.message);
     });
     this.masterClient = new PrismaClient({ adapter: new PrismaPg(masterPool), log: [ { emit: 'event', level: 'query' } ], });
-    this.masterClient.$on('query', (e: Prisma.QueryEvent) => {
-      console.log(`[MASTER DB] Query: ${e.query} | Params: ${e.params}`);
-    });
+    // this.masterClient.$on('query', (e: Prisma.QueryEvent) => {
+    //   console.log(`[MASTER DB] Query: ${e.query} | Params: ${e.params}`);
+    // });
 
     const replicaUrls = (
       process.env.DATABASE_REPLICA_URLS ||
@@ -69,9 +69,9 @@ export class PrismaService implements OnModuleInit, OnModuleDestroy {
         log: [{ emit: 'event', level: 'query' }], 
       });
 
-      client.$on('query', (e: Prisma.QueryEvent) => {
-        console.log(`[REPLICA DB ${index + 1}] Query: ${e.query} | Params: ${e.params}`);
-      });
+      // client.$on('query', (e: Prisma.QueryEvent) => {
+      //   console.log(`[REPLICA DB ${index + 1}] Query: ${e.query} | Params: ${e.params}`);
+      // });
 
       this.replicaClients.push(client);
     });

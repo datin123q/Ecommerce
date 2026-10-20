@@ -5,6 +5,7 @@ import { OrderStatus, TransactionType, Prisma } from '@prisma/client';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
 import { RedisCacheService } from '../../redis/redisCache.service';
+import { asyncLocalStorage } from "src/common/Logger/async-storage";
 
 const JOB_CONSTANTS = {
     CANCEL_ORDERS: {
@@ -164,6 +165,7 @@ export class TasksService {
     }
 
     private async dispatchMarketingEmails(users: any[], products: any[]) {
+        const requestId = asyncLocalStorage.getStore()?.requestId;
         const jobs = users.map(user => ({
             name: 'marketing-mail',
             data: {
@@ -171,6 +173,7 @@ export class TasksService {
                 fullName: user.fullName,
                 userId: user.id,
                 products: products, 
+                requestId
             },
             opts: {
                 removeOnComplete: true,

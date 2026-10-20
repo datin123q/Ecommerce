@@ -17,32 +17,10 @@ import { TransformInterceptor } from './common/interceptors/tranform.interceptor
 import { useContainer } from 'class-validator';
 import cookieParser from 'cookie-parser';
 import { Response } from 'express';
+import { asyncLocalStorage } from './common/Logger/async-storage';
+import { winstonLogger } from './common/Logger/winston.logger';
 
 async function bootstrap() {
-
-  const winstonLogger = WinstonModule.createLogger({
-    transports: [
-      new winston.transports.Console({
-        format: winston.format.combine(
-          winston.format.timestamp(),
-          nestWinstonModuleUtilities.format.nestLike('CommerceCore', {
-            colors: true,
-            prettyPrint: true,
-          }),
-        ),
-      }),
-      new DailyRotateFile({
-        filename: 'logs/error-%DATE%.log',
-        datePattern: 'YYYY-MM-DD',
-        level: 'error',
-        format: winston.format.combine(
-          winston.format.timestamp(),
-          winston.format.json()
-        ),
-      }),
-    ],
-  });
-
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { 
     rawBody: true,
     logger: winstonLogger, 

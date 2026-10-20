@@ -15,6 +15,7 @@ import { CartsService } from '../carts/carts.service';
 import { Queue } from 'bullmq';
 import { InjectQueue } from '@nestjs/bullmq';
 import { RedisInventoryService } from '../inventory/redis-inventory.service';
+import { asyncLocalStorage } from 'src/common/Logger/async-storage';
 
 
 export type CartWithItems = Prisma.CartGetPayload<{
@@ -33,6 +34,7 @@ export type PricingResult = {
   appliedVoucherId?: string;
   voucherLimit?: number;
 };
+const requestId = asyncLocalStorage.getStore()?.requestId;
 
 @Injectable()
 export class OrdersService {
@@ -189,6 +191,7 @@ export class OrdersService {
                 variantId: item.variantId,
                 quantity: item.quantity,
               },
+              requestId
             },
             {
               removeOnComplete: true,
@@ -457,7 +460,8 @@ export class OrdersService {
       { 
         userId: order.userId, 
         orderId: order.id,
-        cartId: cartId 
+        cartId: cartId,
+        requestId 
       }, 
       {
         removeOnComplete: true, 
